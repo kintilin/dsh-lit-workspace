@@ -68,7 +68,8 @@ await act(async () => {
 });
 const feedSnapshot = await (await fetch('http://127.0.0.1:8765/api/feeds')).json();
 
-if (!container.textContent.includes('本地文献库：来自 litd')) throw new Error('real source banner missing');
+if (!container.querySelector('.lit-paper-row')) throw new Error('real paper rows missing');
+if (container.textContent.includes('真实库') || container.textContent.includes('演示库')) throw new Error('legacy data-source wording still visible');
 if (!container.textContent.includes('Codon usage')) throw new Error('real group missing');
 if (!container.querySelector('.lit-journal-badge')) throw new Error('journal badge missing from paper cards');
 if (!container.querySelector('.lit-if-tag')) throw new Error('IF tag missing from paper cards');

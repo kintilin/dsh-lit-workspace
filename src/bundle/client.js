@@ -870,7 +870,7 @@ window.__ModuleLoader__.load({
       const map = {
         recommend: { text: 'AI 推荐', color: '#7fe0b0' },
         maybe: { text: '可能相关', color: '#f5c451' },
-        ignore: { text: '已忽略', color: '#9aa7b4' },
+        ignore: { text: '已忽略', color: 'var(--dsw-alias-label-secondary, #9aa7b4)' },
       };
       const item = map[label] || map.maybe;
       return h(
@@ -891,7 +891,7 @@ window.__ModuleLoader__.load({
     function StatusPill({ status }) {
       const map = {
         verified: { text: '已验证', cls: 'ok' },
-        needs_recheck: { text: '待复核', cls: 'warn' },
+        needs_recheck: { text: '引文待定位', cls: 'warn' },
         missing: { text: '未找到', cls: 'warn' },
         draft: { text: '草稿', cls: 'muted' },
       };
@@ -1045,14 +1045,14 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { className: 'lit-evidence-meta' },
-          h('span', { className: 'lit-soft-badge' }, real ? 'LOCAL PDF' : 'DEMO'),
+          h('span', { className: 'lit-soft-badge' }, '本地 PDF'),
           h('span', null, finding.section || '未标注章节'),
           h('span', null, finding.bbox ? `bbox [${finding.bbox.join(', ')}]` : 'bbox 未记录')
         ),
         h(
           'div',
           { className: 'lit-pdf-sim' },
-          h('div', { className: 'lit-pdf-sim-top' }, `${real ? 'PDF' : 'DEMO PDF'} · page ${finding.page || '?'}`),
+          h('div', { className: 'lit-pdf-sim-top' }, `PDF · page ${finding.page || '?'}`),
           h(
             'div',
             { className: 'lit-pdf-sim-body' },
@@ -1071,9 +1071,114 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { className: 'lit-evidence-note' },
-          real
-            ? '真实库：页码和 bbox 来自本地 PDF 文本层；当前预览仍是简化页面，不是 PDF 渲染。'
-            : '演示数据：这里的页码、章节和引文都是虚构的。'
+          '页码和 bbox 来自 PDF 文本层；预览为简化页面，不是 PDF 渲染。'
+        )
+      );
+    }
+
+    function ManualEvidenceModal({ target, onClose, onSave }) {
+      const [quote, setQuote] = useState(target?.quote || '');
+      const [page, setPage] = useState(target?.page ? String(target.page) : '');
+      return h(
+        'div',
+        {
+          className: 'lit-modal-backdrop',
+          role: 'presentation',
+          onMouseDown: (event) => {
+            if (event.target === event.currentTarget) onClose();
+          },
+        },
+        h(
+          'div',
+          { className: 'lit-modal lit-confirm-modal', role: 'dialog', 'aria-modal': 'true' },
+          h(
+            'div',
+            { className: 'lit-modal-head' },
+            h(
+              'div',
+              null,
+              h('div', { className: 'lit-eyebrow' }, '引用证据'),
+              h('h2', { className: 'lit-modal-title' }, '手动添加证据'),
+              h('div', { className: 'lit-modal-sub', style: { margin: '6px 0 0' } }, '粘贴原文片段并填写页码；系统不会自动改写这段引文。')
+            ),
+            h('button', { className: 'lit-icon-btn', type: 'button', title: '关闭', onClick: onClose }, h(Icon, { name: 'x', size: 16 }))
+          ),
+          h('label', { className: 'lit-field-label' }, '原文片段'),
+          h('textarea', {
+            className: 'lit-textarea',
+            rows: 5,
+            value: quote,
+            placeholder: '粘贴原文中逐字连续的英文片段',
+            onChange: (event) => setQuote(event.target.value),
+          }),
+          h('label', { className: 'lit-field-label', style: { marginTop: '10px' } }, '页码'),
+          h('input', {
+            className: 'lit-input',
+            type: 'number',
+            min: '1',
+            value: page,
+            placeholder: '可选',
+            onChange: (event) => setPage(event.target.value),
+          }),
+          h(
+            'div',
+            { className: 'lit-modal-actions' },
+            h('button', { type: 'button', className: 'lit-btn lit-btn-ghost', onClick: onClose }, '取消'),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'lit-btn lit-btn-primary',
+                disabled: !quote.trim(),
+                onClick: () => onSave({ quote: quote.trim(), page: page ? Number(page) : null }),
+              },
+              '保存证据'
+            )
+          )
+        )
+      );
+    }
+
+    function TranslationModal({ busy, text, error, onClose, onRetry }) {
+      return h(
+        'div',
+        {
+          className: 'lit-modal-backdrop',
+          role: 'presentation',
+          onMouseDown: (event) => {
+            if (event.target === event.currentTarget && !busy) onClose();
+          },
+        },
+        h(
+          'div',
+          { className: 'lit-modal lit-translation-modal', role: 'dialog', 'aria-modal': 'true' },
+          h(
+            'div',
+            { className: 'lit-modal-head' },
+            h(
+              'div',
+              null,
+              h('div', { className: 'lit-eyebrow' }, '翻译'),
+              h('h2', { className: 'lit-modal-title' }, '当前页面翻译'),
+              h('div', { className: 'lit-modal-sub', style: { margin: '6px 0 0' } }, '使用 DSH 内置翻译服务，仅翻译当前工作台正文。')
+            ),
+            h('button', { className: 'lit-icon-btn', type: 'button', title: '关闭', onClick: onClose, disabled: busy }, h(Icon, { name: 'x', size: 16 }))
+          ),
+          busy
+            ? h('div', { className: 'lit-import-progress' }, '正在翻译，长文本可能需要一点时间…')
+            : error
+              ? h(
+                  'div',
+                  { className: 'lit-import-result-error' },
+                  `翻译失败：${error}。请在 DSH 设置中确认内置翻译插件已启用。`,
+                  h('button', { type: 'button', className: 'lit-btn lit-btn-ghost', onClick: onRetry, style: { marginTop: '10px' } }, '重试')
+                )
+              : h('div', { className: 'lit-translation-body' }, text || '没有可翻译的正文。'),
+          h(
+            'div',
+            { className: 'lit-modal-actions' },
+            h('button', { type: 'button', className: 'lit-btn lit-btn-ghost', onClick: onClose, disabled: busy }, '关闭')
+          )
         )
       );
     }
@@ -1134,7 +1239,7 @@ window.__ModuleLoader__.load({
             h(
               'div',
               null,
-              h('div', { className: 'lit-eyebrow' }, '范围汇总 · DEMO'),
+              h('div', { className: 'lit-eyebrow' }, '范围汇总'),
               h('h2', { className: 'lit-modal-title' }, `${papers.length} 篇论文的证据矩阵`)
             ),
             h('button', { className: 'lit-icon-btn', type: 'button', title: '关闭', onClick: onClose }, h(Icon, { name: 'x', size: 16 }))
@@ -1183,9 +1288,13 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function GroupManagerModal({ groups, counts, templates, onClose, onCreate, onRename, onRecolor, onDelete }) {
+    function GroupManagerModal({ groups, counts, templates, onClose, onCreate, onRename, onRecolor, onDelete, onMove }) {
       const [newName, setNewName] = useState('');
-      const [newColor, setNewColor] = useState('#72b7ff');
+      const randomColor = () => {
+        const palettes = ['#7fe0b0', '#8fb8ff', '#f5c451', '#c8b6ff', '#ff9f9f', '#72d4d4', '#f0a6ca', '#b6d772'];
+        return palettes[Math.floor(Math.random() * palettes.length)];
+      };
+      const [newColor, setNewColor] = useState(() => randomColor());
       return h(
         'div',
         {
@@ -1204,7 +1313,7 @@ window.__ModuleLoader__.load({
             h(
               'div',
               null,
-              h('div', { className: 'lit-eyebrow' }, '分组管理 · DEMO'),
+              h('div', { className: 'lit-eyebrow' }, '分组管理'),
               h('h2', { className: 'lit-modal-title' }, '管理分组标签'),
               h('div', { className: 'lit-modal-sub', style: { margin: '6px 0 0' } }, '改名、换颜色、删除，或新建一个分组。删除分组不会删除论文。')
             ),
@@ -1217,6 +1326,12 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 { key: group.id, className: 'lit-group-manager-row' },
+                h(
+                  'div',
+                  { className: 'lit-group-move' },
+                  h('button', { type: 'button', className: 'lit-icon-btn', title: '上移', onClick: () => onMove(group.id, -1) }, '↑'),
+                  h('button', { type: 'button', className: 'lit-icon-btn', title: '下移', onClick: () => onMove(group.id, 1) }, '↓')
+                ),
                 h('input', {
                   type: 'color',
                   className: 'lit-color-input',
@@ -1268,6 +1383,7 @@ window.__ModuleLoader__.load({
                   if (event.key === 'Enter' && newName.trim()) {
                     onCreate(newName.trim(), newColor);
                     setNewName('');
+                    setNewColor(randomColor());
                   }
                 },
               }),
@@ -1280,6 +1396,7 @@ window.__ModuleLoader__.load({
                   onClick: () => {
                     onCreate(newName.trim(), newColor);
                     setNewName('');
+                    setNewColor(randomColor());
                   },
                 },
                 h(Icon, { name: 'plus', size: 13 }),
@@ -2525,7 +2642,7 @@ window.__ModuleLoader__.load({
             h(
               'div',
               null,
-              h('div', { className: 'lit-eyebrow' }, 'METADATA ONLY'),
+              h('div', { className: 'lit-eyebrow' }, '仅元数据'),
               h('h2', { className: 'lit-modal-title' }, '这篇文献目前只有元数据'),
               h('div', { className: 'lit-modal-sub', style: { margin: '6px 0 0' } }, paper.title)
             ),
@@ -3220,7 +3337,7 @@ window.__ModuleLoader__.load({
             h(
               'div',
               null,
-              h('div', { className: 'lit-eyebrow' }, '模板 / 预设 · DEMO'),
+              h('div', { className: 'lit-eyebrow' }, '模板 / 预设'),
               h('h2', { className: 'lit-modal-title' }, '配置这篇论文的大类'),
               h('div', { className: 'lit-modal-sub', style: { margin: '6px 0 0' } }, '每个大类可以是文本、星级、多选标签或已读标记；同一篇论文可以叠加多个分组模板。')
             ),
@@ -3751,7 +3868,7 @@ window.__ModuleLoader__.load({
             { className: 'lit-modal-sub' },
             real
               ? '会删除 SQLite 记录、全文索引和 data/pdfs/ 下的 PDF 副本。原始下载文件不受影响。'
-              : '会从演示库移除这些论文；不会影响本地文件。'
+              : '会从文献库移除这些论文；不会影响本地文件。'
           ),
           h(
             'div',
@@ -3843,7 +3960,7 @@ window.__ModuleLoader__.load({
             h(
               'div',
               null,
-              h('div', { className: 'lit-eyebrow' }, targetTitle ? '真实库 · ATTACH PDF' : '真实库 · IMPORT'),
+              h('div', { className: 'lit-eyebrow' }, targetTitle ? '添加 PDF' : '导入 PDF'),
               h('h2', { className: 'lit-modal-title' }, targetTitle ? '为这篇添加 PDF' : '导入 PDF'),
               h(
                 'div',
@@ -3928,6 +4045,321 @@ window.__ModuleLoader__.load({
       );
     }
 
+    function ImportCenterModal({ onClose, onImported }) {
+      const [tab, setTab] = useState('pdf');
+      const [files, setFiles] = useState([]);
+      const [manual, setManual] = useState({ title: '', authors: '', year: '', venue: '', doi: '', abstract: '' });
+      const [bibFormat, setBibFormat] = useState('ris');
+      const [bibText, setBibText] = useState('');
+      const [busy, setBusy] = useState(false);
+      const [message, setMessage] = useState('');
+      const [result, setResult] = useState(null);
+      const api = `${DSH_LIT_API_BASE}`;
+      const setManualField = (key, value) => setManual((previous) => ({ ...previous, [key]: value }));
+
+      const importPdfs = async () => {
+        if (!files.length || busy) return;
+        setBusy(true);
+        setResult(null);
+        const imported = [];
+        const failures = [];
+        const warnings = [];
+        for (let index = 0; index < files.length; index += 1) {
+          const file = files[index];
+          setMessage(`正在解析 ${index + 1}/${files.length}：${file.name}`);
+          try {
+            const params = new URLSearchParams({ filename: file.name });
+            const response = await fetch(`${api}/api/import-upload?${params.toString()}`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/pdf' },
+              body: await file.arrayBuffer(),
+            });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok || body.ok !== true) throw new Error(body.error || `HTTP ${response.status}`);
+            imported.push(body.paper);
+            if (body.needs_metadata_review) {
+              warnings.push(`${file.name} 的标题/期刊/作者可能未正确识别（${body.paper?.title || '未命名'}）`);
+            }
+          } catch (error) {
+            failures.push(`${file.name}：${error.message}`);
+          }
+        }
+        setBusy(false);
+        setMessage('');
+        setResult({ kind: 'pdf', imported, failures, warnings });
+        if (imported.length) onImported(imported[0]);
+        if (!failures.length) setFiles([]);
+      };
+
+      const importManual = async () => {
+        if (!manual.title.trim() || busy) return;
+        setBusy(true);
+        setMessage('正在写入文献库…');
+        try {
+          const response = await fetch(`${api}/api/discover/import-metadata`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              title: manual.title,
+              authors: manual.authors,
+              year: manual.year,
+              journal: manual.venue,
+              venue: manual.venue,
+              doi: manual.doi,
+              abstract: manual.abstract,
+            }),
+          });
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok || body.ok !== true) throw new Error(body.error || `HTTP ${response.status}`);
+          setResult({ kind: 'manual', imported: [body.paper], failures: [] });
+          onImported(body.paper);
+        } catch (error) {
+          setResult({ kind: 'manual', imported: [], failures: [error.message] });
+        } finally {
+          setBusy(false);
+          setMessage('');
+        }
+      };
+
+      const lookupDoi = async () => {
+        const doi = manual.doi.trim();
+        if (!doi || busy) return;
+        setBusy(true);
+        setMessage('正在通过 DOI 查询 Crossref…');
+        try {
+          const response = await fetch(`${api}/api/papers/lookup-doi`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ doi }),
+          });
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok || body.ok !== true) throw new Error(body.error || `HTTP ${response.status}`);
+          const metadata = body.metadata || {};
+          setManual((previous) => ({
+            ...previous,
+            title: metadata.title || previous.title,
+            authors: metadata.authors || previous.authors,
+            year: metadata.year ? String(metadata.year) : previous.year,
+            venue: metadata.venue || previous.venue,
+            doi: metadata.doi || previous.doi,
+            abstract: metadata.abstract || previous.abstract,
+          }));
+          setMessage('DOI 查询完成，可检查后导入。');
+        } catch (error) {
+          setMessage(`DOI 查询失败：${error.message}`);
+        } finally {
+          setBusy(false);
+        }
+      };
+
+      const importBibliography = async () => {
+        if (!bibText.trim() || busy) return;
+        setBusy(true);
+        setResult(null);
+        setMessage('正在解析文献记录…');
+        try {
+          const response = await fetch(`${api}/api/import/bibliography`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ format: bibFormat, text: bibText }),
+          });
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok || body.ok !== true) throw new Error(body.error || `HTTP ${response.status}`);
+          setResult({
+            kind: 'bibliography',
+            imported: body.papers || [],
+            failures: [],
+            parsed: body.parsed,
+            skipped: body.skipped_records || [],
+            errors: body.errors || [],
+          });
+          if (body.papers?.length) onImported(body.papers[0]);
+          setBibText('');
+        } catch (error) {
+          setResult({ kind: 'bibliography', imported: [], failures: [error.message], parsed: 0, skipped: [], errors: [] });
+        } finally {
+          setBusy(false);
+          setMessage('');
+        }
+      };
+
+      const tabButton = (id, label) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            className: tab === id ? 'lit-btn lit-btn-primary' : 'lit-btn lit-btn-ghost',
+            onClick: () => {
+              setTab(id);
+              setResult(null);
+              setMessage('');
+            },
+            disabled: busy,
+          },
+          label
+        );
+
+      return h(
+        'div',
+        {
+          className: 'lit-modal-backdrop',
+          role: 'presentation',
+          onMouseDown: (event) => {
+            if (event.target === event.currentTarget && !busy) onClose();
+          },
+        },
+        h(
+          'div',
+          { className: 'lit-modal lit-import-center', role: 'dialog', 'aria-modal': 'true' },
+          h(
+            'div',
+            { className: 'lit-modal-head' },
+            h(
+              'div',
+              null,
+              h('div', { className: 'lit-eyebrow' }, '导入'),
+              h('h2', { className: 'lit-modal-title' }, '批量导入与文献记录'),
+              h('div', { className: 'lit-modal-sub', style: { margin: '6px 0 0' } }, 'PDF 解析失败时可改用手动元数据、DOI、RIS 或 EndNote。')
+            ),
+            h('button', { className: 'lit-icon-btn', type: 'button', title: '关闭', onClick: onClose, disabled: busy }, h(Icon, { name: 'x', size: 16 }))
+          ),
+          h(
+            'div',
+            { className: 'lit-import-tabs' },
+            tabButton('pdf', 'PDF（可多选）'),
+            tabButton('manual', '手动 / DOI'),
+            tabButton('bibliography', 'RIS / EndNote')
+          ),
+          busy ? h('div', { className: 'lit-import-progress' }, message || '处理中…') : null,
+          tab === 'pdf'
+            ? h(
+                'div',
+                { className: 'lit-import-form' },
+                h(
+                  'label',
+                  { className: 'lit-dropzone' },
+                  h('input', {
+                    type: 'file',
+                    accept: 'application/pdf,.pdf',
+                    multiple: true,
+                    style: { display: 'none' },
+                    onChange: (event) => setFiles(Array.from(event.target.files || [])),
+                    disabled: busy,
+                  }),
+                  h(Icon, { name: 'plus', size: 20 }),
+                  h('div', { className: 'lit-dropzone-title' }, files.length ? `已选择 ${files.length} 个 PDF` : '拖入或选择多个 PDF'),
+                  h('div', { className: 'lit-dropzone-sub' }, files.length ? files.map((file) => file.name).join('、') : '逐个解析，解析失败的文件会在结果中列出')
+                ),
+                h(
+                  'div',
+                  { className: 'lit-import-file-actions' },
+                  h('button', { type: 'button', className: 'lit-btn lit-btn-primary', disabled: !files.length || busy, onClick: importPdfs }, '开始导入')
+                )
+              )
+            : tab === 'manual'
+              ? h(
+                  'div',
+                  { className: 'lit-import-form' },
+                  h('label', { className: 'lit-field-label' }, '标题'),
+                  h('input', { className: 'lit-input', value: manual.title, onChange: (event) => setManualField('title', event.target.value) }),
+                  h('label', { className: 'lit-field-label' }, '作者'),
+                  h('input', { className: 'lit-input', value: manual.authors, onChange: (event) => setManualField('authors', event.target.value) }),
+                  h(
+                    'div',
+                    { className: 'lit-import-inline' },
+                    h('input', { className: 'lit-input', placeholder: '年份', value: manual.year, onChange: (event) => setManualField('year', event.target.value) }),
+                    h('input', { className: 'lit-input', placeholder: '期刊', value: manual.venue, onChange: (event) => setManualField('venue', event.target.value) })
+                  ),
+                  h(
+                    'div',
+                    { className: 'lit-import-inline' },
+                    h('input', { className: 'lit-input', placeholder: 'DOI', value: manual.doi, onChange: (event) => setManualField('doi', event.target.value) }),
+                    h('button', { type: 'button', className: 'lit-btn lit-btn-ghost', disabled: busy || !manual.doi.trim(), onClick: lookupDoi }, '按 DOI 查询')
+                  ),
+                  h('label', { className: 'lit-field-label' }, '摘要'),
+                  h('textarea', { className: 'lit-textarea', rows: 4, value: manual.abstract, onChange: (event) => setManualField('abstract', event.target.value) }),
+                  h('button', { type: 'button', className: 'lit-btn lit-btn-primary', disabled: busy || !manual.title.trim(), onClick: importManual }, '写入文献库')
+                )
+              : h(
+                  'div',
+                  { className: 'lit-import-form' },
+                  h(
+                    'div',
+                    { className: 'lit-import-inline' },
+                    h(
+                      'select',
+                      { className: 'lit-select', value: bibFormat, onChange: (event) => setBibFormat(event.target.value) },
+                      h('option', { value: 'ris' }, 'RIS'),
+                      h('option', { value: 'endnote' }, 'EndNote')
+                    ),
+                    h(
+                      'label',
+                      { className: 'lit-btn lit-btn-ghost' },
+                      '选择文件',
+                      h('input', {
+                        type: 'file',
+                        accept: '.ris,.enw,.nbib,.txt',
+                        style: { display: 'none' },
+                        onChange: async (event) => {
+                          const file = event.target.files?.[0];
+                          if (file) {
+                            setBibText(await file.text());
+                            setBibFormat(/\.(enw|nbib)$/i.test(file.name) ? 'endnote' : 'ris');
+                          }
+                          event.target.value = '';
+                        },
+                      })
+                    )
+                  ),
+                  h('textarea', {
+                    className: 'lit-textarea',
+                    rows: 10,
+                    value: bibText,
+                    placeholder: '粘贴 RIS 或 EndNote 导出内容',
+                    onChange: (event) => setBibText(event.target.value),
+                  }),
+                  h('button', { type: 'button', className: 'lit-btn lit-btn-primary', disabled: busy || !bibText.trim(), onClick: importBibliography }, '导入文献')
+                ),
+          result
+            ? h(
+                'div',
+                { className: 'lit-import-result' },
+                h('div', { className: 'lit-import-result-title' }, `成功 ${result.imported?.length || 0} 条`),
+                result.kind === 'bibliography'
+                  ? h('div', { className: 'lit-import-result-sub' }, `解析 ${result.parsed || 0} 条，重复跳过 ${result.skipped?.length || 0} 条`)
+                  : null,
+                result.imported?.slice(0, 8).map((paper) => h('div', { key: paper.id, className: 'lit-import-result-row' }, paper.title)),
+                result.warnings?.length || result.failures?.length
+                  ? h(
+                      'div',
+                      null,
+                      ...(result.warnings || []).map((warning, index) =>
+                        h('div', { key: `w${index}`, className: 'lit-import-result-sub' }, `需检查：${warning}`)
+                      ),
+                      ...(result.failures || []).map((failure, index) =>
+                        h('div', { key: `f${index}`, className: 'lit-import-result-error' }, failure)
+                      ),
+                      h(
+                        'button',
+                        { type: 'button', className: 'lit-btn lit-btn-ghost', style: { marginTop: '8px' }, onClick: () => { setTab('manual'); setResult(null); } },
+                        '改用手动元数据 / DOI'
+                      )
+                    )
+                  : null,
+                result.errors?.length
+                  ? result.errors.map((error, index) => h('div', { key: `e${index}`, className: 'lit-import-result-error' }, `${error.title || '未命名'}：${error.error}`))
+                  : null
+              )
+            : null,
+          h(
+            'div',
+            { className: 'lit-modal-actions' },
+            h('button', { type: 'button', className: 'lit-btn lit-btn-ghost', onClick: onClose, disabled: busy }, '关闭')
+          )
+        )
+      );
+    }
+
     function PdfViewerModal({ paper, page, onClose, onOpenExternal }) {
       const src = `${DSH_LIT_API_BASE}/api/papers/${encodeURIComponent(paper.id)}/pdf#page=${page || 1}`;
       return h(
@@ -3982,7 +4414,7 @@ window.__ModuleLoader__.load({
         flex-direction: column;
         position: relative;
         overflow: hidden;
-        background-color: #111820;
+        background-color: var(--dsw-alias-bg-base, #111820);
         background-image: linear-gradient(var(--dsw-alias-bg-base, #111820), var(--dsw-alias-bg-base, #111820));
         color: var(--dsw-alias-label-primary, #e8eef5);
         font-family: inherit;
@@ -4001,13 +4433,13 @@ window.__ModuleLoader__.load({
         justify-content: space-between;
         gap: 18px;
         border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.09));
-        background-color: #17222d;
+        background-color: var(--dsw-alias-bg-layer-1, #17222d);
         background-image: linear-gradient(var(--dsw-alias-bg-layer-1, #17222d), var(--dsw-alias-bg-layer-1, #17222d));
       }
       .lit-brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
       .lit-brand-mark {
         width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
-        color: #9fd0ff; background: rgba(114,183,255,.12); border: 1px solid rgba(114,183,255,.28);
+        color: var(--dsw-alias-brand-primary, #9fd0ff); background: rgba(114,183,255,.12); border: 1px solid rgba(114,183,255,.28);
       }
       .lit-brand-text { min-width: 0; }
       .lit-title { font-size: 16px; font-weight: 650; letter-spacing: .01em; display: flex; align-items: center; gap: 8px; }
@@ -4031,7 +4463,7 @@ window.__ModuleLoader__.load({
       .lit-tabs {
         flex: 0 0 auto; display: flex; align-items: center; gap: 2px;
         padding: 0 14px; border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.09));
-        background-color: #111820;
+        background-color: var(--dsw-alias-bg-base, #111820);
         background-image: linear-gradient(var(--dsw-alias-bg-base, #111820), var(--dsw-alias-bg-base, #111820));
       }
       .lit-tab {
@@ -4043,7 +4475,7 @@ window.__ModuleLoader__.load({
       .lit-tab-count {
         min-width: 18px; padding: 1px 5px; border-radius: 9px; font-size: 10px; text-align: center;
         color: var(--dsw-alias-label-secondary, #92a0ae);
-        background-color: #22303d;
+        background-color: var(--dsw-alias-bg-layer-2, #22303d);
         background-image: linear-gradient(var(--dsw-alias-bg-layer-2, #22303d), var(--dsw-alias-bg-layer-2, #22303d));
       }
       .lit-demo-banner {
@@ -4063,7 +4495,7 @@ window.__ModuleLoader__.load({
       .lit-groups-pane {
         min-height: 0; display: flex; flex-direction: column;
         border-right: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.09));
-        background-color: #17222d;
+        background-color: var(--dsw-alias-bg-layer-1, #17222d);
         background-image: linear-gradient(var(--dsw-alias-bg-layer-1, #17222d), var(--dsw-alias-bg-layer-1, #17222d));
       }
       .lit-groups-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 7px; padding: 14px 12px 7px; }
@@ -4085,7 +4517,7 @@ window.__ModuleLoader__.load({
         font-size: 9px; color: var(--dsw-alias-label-secondary, #92a0ae); border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.12));
         border-radius: 999px; padding: 1px 6px;
       }
-      .lit-mode-pill-on { color: #9fd0ff; background: rgba(114,183,255,.12); border-color: rgba(114,183,255,.32); }
+      .lit-mode-pill-on { color: var(--dsw-alias-brand-primary, #9fd0ff); background: rgba(114,183,255,.12); border-color: rgba(114,183,255,.32); }
       .lit-mode-hint { color: var(--dsw-alias-label-secondary, #6f7f8e); font-size: 8.5px; }
       .lit-cancel-multi { border: 0; background: transparent; color: #ff9f9f; font-size: 9px; padding: 1px 3px; border-radius: 4px; }
       .lit-cancel-multi:hover { background: rgba(255,159,159,.1); }
@@ -4094,13 +4526,13 @@ window.__ModuleLoader__.load({
       .lit-logic-toggle { display: flex; border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.14)); border-radius: 6px; overflow: hidden; }
       .lit-logic-button { border: 0; background: transparent; color: var(--dsw-alias-label-secondary, #92a0ae); font-size: 9px; padding: 3px 7px; }
       .lit-logic-button:hover { color: var(--dsw-alias-label-primary, #e8eef5); }
-      .lit-logic-button-on { color: #9fd0ff; background: rgba(114,183,255,.14); }
+      .lit-logic-button-on { color: var(--dsw-alias-brand-primary, #9fd0ff); background: rgba(114,183,255,.14); }
       .lit-group-filter-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .lit-manage-btn { padding: 4px 6px; font-size: 10px; }
       .lit-articles-pane {
         min-height: 0; display: flex; flex-direction: column;
         border-right: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.09));
-        background-color: #111820;
+        background-color: var(--dsw-alias-bg-base, #111820);
         background-image: linear-gradient(var(--dsw-alias-bg-base, #111820), var(--dsw-alias-bg-base, #111820));
       }
       .lit-articles-head { padding: 12px 12px 9px; border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.08)); }
@@ -4113,7 +4545,7 @@ window.__ModuleLoader__.load({
         display: flex; align-items: center; gap: 3px; flex-wrap: wrap;
         padding: 6px 9px; border-bottom: 1px solid rgba(114,183,255,.2); background: rgba(114,183,255,.08);
       }
-      .lit-bulk-label { color: #9fd0ff; font-size: 10.5px; font-weight: 600; margin-right: auto; }
+      .lit-bulk-label { color: var(--dsw-alias-brand-primary, #9fd0ff); font-size: 10.5px; font-weight: 600; margin-right: auto; }
       .lit-bulk-btn {
         display: inline-flex; align-items: center; gap: 3px; border: 0; background: transparent;
         color: var(--dsw-alias-label-secondary, #a4b2c0); font-size: 10px; padding: 3px 5px; border-radius: 5px;
@@ -4124,7 +4556,7 @@ window.__ModuleLoader__.load({
       .lit-bulk-group-menu {
         position: absolute; left: 0; top: calc(100% + 4px); z-index: 30; min-width: 220px;
         padding: 6px; border-radius: 8px; border: 1px solid var(--dsw-alias-border-l2, rgba(255,255,255,.16));
-        background: #1c2834; box-shadow: 0 12px 28px rgba(0,0,0,.35);
+        background: var(--dsw-alias-bg-layer-2, #1c2834); box-shadow: 0 12px 28px rgba(0,0,0,.35);
       }
       .lit-bulk-new-group { display: flex; gap: 4px; margin-top: 5px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,.08); }
       .lit-bulk-new-group .lit-input { height: 25px; padding: 3px 6px; font-size: 10px; }
@@ -4137,7 +4569,7 @@ window.__ModuleLoader__.load({
         position: relative;
         min-height: 0; overflow: auto; padding: 13px;
         border-right: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.09));
-        background-color: #17222d;
+        background-color: var(--dsw-alias-bg-layer-1, #17222d);
         background-image: linear-gradient(var(--dsw-alias-bg-layer-1, #17222d), var(--dsw-alias-bg-layer-1, #17222d));
       }
       .lit-column-resizer {
@@ -4151,16 +4583,16 @@ window.__ModuleLoader__.load({
         position: relative;
         min-height: 0; display: flex; flex-direction: column;
         border-right: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.09));
-        background-color: #17222d;
+        background-color: var(--dsw-alias-bg-layer-1, #17222d);
         background-image: linear-gradient(var(--dsw-alias-bg-layer-1, #17222d), var(--dsw-alias-bg-layer-1, #17222d));
       }
       .lit-listpane-head { padding: 13px 13px 10px; border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.08)); }
       .lit-search { position: relative; }
       .lit-search-icon { position: absolute; left: 10px; top: 9px; color: var(--dsw-alias-label-secondary, #92a0ae); }
-      .lit-search-state { position: absolute; right: 9px; top: 9px; color: #72b7ff; font-size: 9px; pointer-events: none; }
+      .lit-search-state { position: absolute; right: 9px; top: 9px; color: var(--dsw-alias-brand-primary, #72b7ff); font-size: 9px; pointer-events: none; }
       .lit-input {
         width: 100%; border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.12));
-        background-color: #111820;
+        background-color: var(--dsw-alias-bg-base, #111820);
         background-image: linear-gradient(var(--dsw-alias-bg-base, #111820), var(--dsw-alias-bg-base, #111820));
         border-radius: 8px; padding: 8px 10px 8px 32px;
         outline: none; color: var(--dsw-alias-label-primary, #e8eef5);
@@ -4184,7 +4616,7 @@ window.__ModuleLoader__.load({
       .lit-paper-row:hover { background: var(--dsw-alias-bg-layer-2, #22303d); }
       .lit-paper-row:focus-visible { border-color: var(--dsw-alias-brand-primary, #72b7ff); }
       .lit-paper-row-active {
-        background-color: #22303d;
+        background-color: var(--dsw-alias-bg-layer-2, #22303d);
         background-image: linear-gradient(var(--dsw-alias-bg-layer-2, #22303d), var(--dsw-alias-bg-layer-2, #22303d));
         border-color: var(--dsw-alias-border-l1, rgba(255,255,255,.12));
       }
@@ -4200,7 +4632,7 @@ window.__ModuleLoader__.load({
         vertical-align: middle;
       }
       .lit-journal-badge.lit-journal-q1 { color: #f5d58a; border-color: rgba(245,196,81,.35); background: rgba(245,196,81,.1); }
-      .lit-journal-badge.lit-journal-q2 { color: #9fd0ff; border-color: rgba(114,183,255,.35); background: rgba(114,183,255,.1); }
+      .lit-journal-badge.lit-journal-q2 { color: var(--dsw-alias-brand-primary, #9fd0ff); border-color: rgba(114,183,255,.35); background: rgba(114,183,255,.1); }
       .lit-journal-badge.lit-journal-q3 { color: #9fe0c8; border-color: rgba(127,224,176,.3); background: rgba(127,224,176,.08); }
       .lit-journal-badge.lit-journal-q4 { color: #b3bdca; border-color: rgba(179,189,202,.24); background: rgba(179,189,202,.07); }
       .lit-journal-name { min-width: 0; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -4228,11 +4660,11 @@ window.__ModuleLoader__.load({
       .lit-mini-status { font-size: 9.5px; color: #7fe0b0; white-space: nowrap; }
       .lit-mini-status.muted { color: var(--dsw-alias-label-secondary, #92a0ae); }
       .lit-mini-status.ai { color: #f5c451; }
-      .lit-mini-status.ai-summary { color: #9fd0ff; }
-      .lit-ai-badge { color: #9fd0ff !important; border-color: rgba(114,183,255,.34) !important; }
+      .lit-mini-status.ai-summary { color: var(--dsw-alias-brand-primary, #9fd0ff); }
+      .lit-ai-badge { color: var(--dsw-alias-brand-primary, #9fd0ff) !important; border-color: rgba(114,183,255,.34) !important; }
       .lit-detailpane {
         min-width: 0; min-height: 0; overflow: hidden;
-        background-color: #111820;
+        background-color: var(--dsw-alias-bg-base, #111820);
         background-image: linear-gradient(var(--dsw-alias-bg-base, #111820), var(--dsw-alias-bg-base, #111820));
       }
       .lit-detail-grid { height: 100%; min-height: 0; display: grid; }
@@ -4247,8 +4679,8 @@ window.__ModuleLoader__.load({
       .lit-group-menu-wrap { position: relative; display: inline-flex; }
       .lit-group-menu {
         position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 190px;
-        background-color: #1c2834;
-        background-image: linear-gradient(var(--dsw-alias-bg-overlay, #1c2834), var(--dsw-alias-bg-overlay, #1c2834));
+        background-color: var(--dsw-alias-bg-layer-2, #1c2834);
+        background-image: linear-gradient(var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-2, #1c2834)), var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-2, #1c2834)));
         border: 1px solid var(--dsw-alias-border-l2, rgba(255,255,255,.16));
         border-radius: 9px; box-shadow: 0 12px 30px rgba(0,0,0,.35); padding: 8px;
       }
@@ -4258,21 +4690,21 @@ window.__ModuleLoader__.load({
       .lit-btn {
         display: inline-flex; align-items: center; justify-content: center; gap: 6px;
         border-radius: 7px; border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.12));
-        background-color: #22303d;
+        background-color: var(--dsw-alias-bg-layer-2, #22303d);
         background-image: linear-gradient(var(--dsw-alias-bg-layer-2, #22303d), var(--dsw-alias-bg-layer-2, #22303d));
         color: var(--dsw-alias-label-primary, #e8eef5);
         padding: 6px 9px; font-size: 11.5px; white-space: nowrap;
       }
       .lit-btn:hover { filter: brightness(1.08); }
       .lit-btn-primary {
-        background-color: #72b7ff;
+        background-color: var(--dsw-alias-brand-primary, #72b7ff);
         background-image: none;
-        border-color: #72b7ff;
+        border-color: var(--dsw-alias-brand-primary, #72b7ff);
         color: #07111b;
         font-weight: 650;
       }
       .lit-btn-ghost { background: transparent; }
-      .lit-btn-ghost:hover { background-color: #22303d; background-image: none; filter: none; }
+      .lit-btn-ghost:hover { background-color: var(--dsw-alias-bg-layer-2, #22303d); background-image: none; filter: none; }
       .lit-btn-danger { color: var(--dsw-alias-state-error-primary, #ff8c8c); }
       .lit-icon-btn {
         width: 26px; height: 26px; display: inline-grid; place-items: center; padding: 0;
@@ -4292,7 +4724,7 @@ window.__ModuleLoader__.load({
       .lit-textarea {
         width: 100%; min-height: 56px; resize: vertical; border-radius: 8px; padding: 9px 10px;
         border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.12));
-        background-color: #17222d;
+        background-color: var(--dsw-alias-bg-layer-1, #17222d);
         background-image: linear-gradient(var(--dsw-alias-bg-layer-1, #17222d), var(--dsw-alias-bg-layer-1, #17222d));
         color: var(--dsw-alias-label-primary, #e8eef5);
         line-height: 1.55; outline: none;
@@ -4300,7 +4732,7 @@ window.__ModuleLoader__.load({
       .lit-textarea::placeholder { color: var(--dsw-alias-label-secondary, #6f7f8e); }
       .lit-claim {
         border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.1)); border-radius: 9px;
-        background-color: #17222d;
+        background-color: var(--dsw-alias-bg-layer-1, #17222d);
         background-image: linear-gradient(var(--dsw-alias-bg-layer-1, #17222d), var(--dsw-alias-bg-layer-1, #17222d));
         padding: 10px; margin-top: 8px;
       }
@@ -4313,14 +4745,14 @@ window.__ModuleLoader__.load({
       .lit-claim-head .lit-icon-btn { margin-left: auto; }
       .lit-claim .lit-textarea {
         min-height: 44px;
-        background-color: #111820;
+        background-color: var(--dsw-alias-bg-base, #111820);
         background-image: linear-gradient(var(--dsw-alias-bg-base, #111820), var(--dsw-alias-bg-base, #111820));
       }
       .lit-quote-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 7px; }
       .lit-quote { flex: 1 1 auto; color: var(--dsw-alias-label-secondary, #a4b2c0); font-size: 11px; line-height: 1.55; border-left: 2px solid var(--dsw-alias-border-l2, rgba(255,255,255,.16)); padding-left: 8px; min-height: 18px; }
       .lit-evidence-chip {
         display: inline-flex; align-items: center; gap: 4px; border: 1px solid rgba(114,183,255,.3);
-        color: #9fd0ff; background: rgba(114,183,255,.1); border-radius: 999px; padding: 2px 7px; font-size: 10px; white-space: nowrap;
+        color: var(--dsw-alias-brand-primary, #9fd0ff); background: rgba(114,183,255,.1); border-radius: 999px; padding: 2px 7px; font-size: 10px; white-space: nowrap;
       }
       .lit-warn-line { color: #d8b56a; font-size: 10.5px; margin-top: 6px; }
       .lit-empty { display: grid; place-items: center; min-height: 260px; color: var(--dsw-alias-label-secondary, #92a0ae); text-align: center; padding: 30px; }
@@ -4329,7 +4761,7 @@ window.__ModuleLoader__.load({
       .lit-evidence {
         min-height: 0; overflow: auto; padding: 18px 16px 24px;
         border-left: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.1));
-        background-color: #17222d;
+        background-color: var(--dsw-alias-bg-layer-1, #17222d);
         background-image: linear-gradient(var(--dsw-alias-bg-layer-1, #17222d), var(--dsw-alias-bg-layer-1, #17222d));
       }
       .lit-evidence-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
@@ -4347,7 +4779,7 @@ window.__ModuleLoader__.load({
       .lit-feedpane {
         position: relative; overflow: hidden;
         min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.09));
-        background-color: #17222d;
+        background-color: var(--dsw-alias-bg-layer-1, #17222d);
         background-image: linear-gradient(var(--dsw-alias-bg-layer-1, #17222d), var(--dsw-alias-bg-layer-1, #17222d));
       }
       .lit-feedpane-head { padding: 14px 13px 9px; }
@@ -4357,14 +4789,14 @@ window.__ModuleLoader__.load({
       .lit-feed-button-active { background: var(--dsw-alias-bg-layer-2, #22303d); color: var(--dsw-alias-label-primary, #e8eef5); }
       .lit-feed-source-item { display: flex; align-items: center; gap: 2px; }
       .lit-feed-source-item .lit-feed-button { flex: 1 1 auto; min-width: 0; }
-      .lit-feed-delete { display: inline-grid; place-items: center; width: 22px; height: 22px; flex: 0 0 auto; border: 0; border-radius: 5px; background: transparent; color: #7f8c99; }
+      .lit-feed-delete { display: inline-grid; place-items: center; width: 22px; height: 22px; flex: 0 0 auto; border: 0; border-radius: 5px; background: transparent; color: var(--dsw-alias-label-secondary, #7f8c99); }
       .lit-feed-delete:hover { color: #ff9f9f; background: rgba(255,159,159,.08); }
-      .lit-unread { margin-left: auto; min-width: 18px; text-align: center; font-size: 9.5px; color: #9fd0ff; background: rgba(114,183,255,.1); border-radius: 9px; padding: 1px 5px; }
+      .lit-unread { margin-left: auto; min-width: 18px; text-align: center; font-size: 9.5px; color: var(--dsw-alias-brand-primary, #9fd0ff); background: rgba(114,183,255,.1); border-radius: 9px; padding: 1px 5px; }
       .lit-add-feed { padding: 9px 12px 12px; border-top: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.08)); }
       .lit-add-feed-row { display: flex; gap: 5px; margin-top: 6px; }
       .lit-add-feed-row .lit-input { padding-left: 8px; font-size: 10.5px; }
       .lit-tracking-shell { height: 100%; min-height: 0; }
-      .lit-tracking-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #111820; }
+      .lit-tracking-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--dsw-alias-bg-base, #111820); }
       .lit-tracking-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 13px 16px; border-bottom: 1px solid rgba(255,255,255,.08); }
       .lit-tracking-toolbar .lit-filters { margin-top: 0; }
       .lit-feed-search-input { width: 210px; height: 27px; padding: 3px 8px; font-size: 10.5px; }
@@ -4381,15 +4813,15 @@ window.__ModuleLoader__.load({
       .lit-feed-card {
         min-width: 0; display: flex; flex-direction: column; gap: 6px; min-height: 180px;
         padding: 11px 12px; border-radius: 9px; border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.1));
-        background: #17222d; cursor: pointer; outline: none; transition: border-color .15s, opacity .15s, background .15s;
+        background: var(--dsw-alias-bg-layer-1, #17222d); cursor: pointer; outline: none; transition: border-color .15s, opacity .15s, background .15s;
       }
       .lit-feed-card:hover { border-color: rgba(114,183,255,.35); background: #192634; }
-      .lit-feed-card-read { opacity: .58; filter: grayscale(.85); background: #141d26; border-color: rgba(255,255,255,.07); }
-      .lit-feed-card-saved { opacity: .5; filter: grayscale(.65); background: #141d26; border-color: rgba(255,255,255,.06); }
+      .lit-feed-card-read { opacity: .58; filter: grayscale(.85); background: var(--dsw-alias-bg-base, #141d26); border-color: rgba(255,255,255,.07); }
+      .lit-feed-card-saved { opacity: .5; filter: grayscale(.65); background: var(--dsw-alias-bg-base, #141d26); border-color: rgba(255,255,255,.06); }
       .lit-feed-card-saved:hover { opacity: .62; }
       .lit-feed-card-read:hover { opacity: .7; }
       .lit-feed-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-      .lit-feed-kind { font-size: 9px; border-radius: 4px; padding: 1px 5px; border: 1px solid rgba(255,255,255,.12); color: #a4b2c0; white-space: nowrap; }
+      .lit-feed-kind { font-size: 9px; border-radius: 4px; padding: 1px 5px; border: 1px solid rgba(255,255,255,.12); color: var(--dsw-alias-label-secondary, #a4b2c0); white-space: nowrap; }
       .lit-ai-stars { color: #f5c451; font-size: 11px; letter-spacing: 1px; white-space: nowrap; }
       .lit-ai-score-card { margin-top: 12px; padding: 10px 11px; border: 1px solid rgba(245,196,81,.22); background: rgba(245,196,81,.055); border-radius: 7px; }
       .lit-ai-score-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -4410,20 +4842,20 @@ window.__ModuleLoader__.load({
       .lit-author-candidate { padding: 10px 11px; border: 1px solid rgba(255,255,255,.08); border-radius: 7px; background: rgba(255,255,255,.02); }
       .lit-author-candidate-on { border-color: rgba(122,162,247,.45); background: rgba(122,162,247,.08); }
       .lit-author-name { color: #e1e8f0; font-size: 13px; font-weight: 600; }
-      .lit-author-meta { color: #7f8b99; font-size: 10px; margin-top: 3px; }
+      .lit-author-meta { color: var(--dsw-alias-label-secondary, #7f8b99); font-size: 10px; margin-top: 3px; }
       .lit-author-inst { color: #a7b4c2; font-size: 10.5px; margin-top: 3px; }
       .lit-author-candidate .lit-feed-detail-btn { margin-top: 8px; }
       .lit-author-result-head { margin-top: 14px; color: #a9c3f8; font-size: 11px; }
       .lit-author-result-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
       .lit-author-summary-hint { color: #6f7c89; font-size: 9.5px; }
       .lit-author-work-card { min-height: 230px; }
-      .lit-author-cite { color: #8e9aa7; font-size: 10px; white-space: nowrap; }
-      .lit-saved-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 5px; color: #7f8b99; background: rgba(255,255,255,.04); font-size: 10px; }
+      .lit-author-cite { color: var(--dsw-alias-label-secondary, #8e9aa7); font-size: 10px; white-space: nowrap; }
+      .lit-saved-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 5px; color: var(--dsw-alias-label-secondary, #7f8b99); background: rgba(255,255,255,.04); font-size: 10px; }
       .lit-author-authors { color: #73808d; font-size: 9.5px; line-height: 1.5; }
-      .lit-author-abstract { color: #81909f; font-size: 10.5px; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+      .lit-author-abstract { color: var(--dsw-alias-label-secondary, #81909f); font-size: 10.5px; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
       .lit-author-abstract-label { display: inline-block; margin-right: 5px; padding: 0 5px; border-radius: 4px; color: #9fb5cc; background: rgba(255,255,255,.05); font-size: 9px; }
       .lit-ai-sources { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 12px; }
-      .lit-ai-source { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border: 1px solid rgba(255,255,255,.09); border-radius: 999px; color: #8e9aa7; font-size: 10px; cursor: pointer; }
+      .lit-ai-source { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border: 1px solid rgba(255,255,255,.09); border-radius: 999px; color: var(--dsw-alias-label-secondary, #8e9aa7); font-size: 10px; cursor: pointer; }
       .lit-ai-source input { accent-color: #7aa2f7; margin: 0; }
       .lit-ai-source-on { color: #c9d7e8; border-color: rgba(122,162,247,.38); background: rgba(122,162,247,.08); }
       .lit-ai-search-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; margin-top: 10px; }
@@ -4432,7 +4864,7 @@ window.__ModuleLoader__.load({
       .lit-ai-search-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; margin-top: 12px; }
       .lit-ai-progress { margin-top: 12px; padding: 12px; border: 1px solid rgba(122,162,247,.2); border-radius: 8px; background: rgba(122,162,247,.05); }
       .lit-ai-progress-head { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #c8d6e8; }
-      .lit-ai-progress-hint { color: #7f8b99; font-size: 10px; margin-left: auto; }
+      .lit-ai-progress-hint { color: var(--dsw-alias-label-secondary, #7f8b99); font-size: 10px; margin-left: auto; }
       .lit-spinner { width: 12px; height: 12px; border: 2px solid rgba(122,162,247,.25); border-top-color: #7aa2f7; border-radius: 50%; display: inline-block; animation: lit-spin .8s linear infinite; }
       @keyframes lit-spin { to { transform: rotate(360deg); } }
       .lit-ai-stage-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
@@ -4442,7 +4874,7 @@ window.__ModuleLoader__.load({
       .lit-ai-stage-active .lit-ai-stage-dot { background: #7aa2f7; box-shadow: 0 0 0 3px rgba(122,162,247,.15); }
       .lit-ai-stage-done { color: #8fbf9f; }
       .lit-ai-stage-done .lit-ai-stage-dot { background: #65b380; }
-      .lit-ai-result-count { margin-top: 10px; color: #8e9aa7; font-size: 10px; }
+      .lit-ai-result-count { margin-top: 10px; color: var(--dsw-alias-label-secondary, #8e9aa7); font-size: 10px; }
       .lit-ai-loadmore { display: flex; justify-content: center; margin-top: 16px; padding-bottom: 8px; }
       .lit-ai-loadmore-end { color: #6f7c89; font-size: 10px; }
       .lit-ai-skeleton { height: 150px; border: 1px solid rgba(255,255,255,.06); border-radius: 7px; padding: 12px; background: rgba(255,255,255,.02); }
@@ -4452,21 +4884,21 @@ window.__ModuleLoader__.load({
       @keyframes lit-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
       .lit-ai-score-options { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
       .lit-ai-score-options .lit-input { width: 80px; }
-      .lit-feed-kind-paper { color: #9fd0ff; border-color: rgba(114,183,255,.3); background: rgba(114,183,255,.08); }
+      .lit-feed-kind-paper { color: var(--dsw-alias-brand-primary, #9fd0ff); border-color: rgba(114,183,255,.3); background: rgba(114,183,255,.08); }
       .lit-feed-kind-news { color: #f5d58a; border-color: rgba(245,196,81,.28); background: rgba(245,196,81,.07); }
       .lit-feed-kind-comment { color: #c8b6ff; border-color: rgba(177,156,255,.28); background: rgba(177,156,255,.07); }
       .lit-feed-card-title { font-size: 12.5px; line-height: 1.45; font-weight: 650; color: var(--dsw-alias-label-primary, #e8eef5); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
       .lit-feed-card-source { color: var(--dsw-alias-label-secondary, #92a0ae); font-size: 9.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .lit-feed-card-summary { color: #81909f; font-size: 10.5px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+      .lit-feed-card-summary { color: var(--dsw-alias-label-secondary, #81909f); font-size: 10.5px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
       .lit-feed-card-foot { margin-top: auto; display: flex; align-items: center; gap: 7px; }
-      .lit-feed-detail-btn { margin-left: auto; border: 1px solid rgba(114,183,255,.25); background: rgba(114,183,255,.08); color: #9fd0ff; border-radius: 5px; padding: 3px 8px; font-size: 9.5px; }
-      .lit-feed-empty-hint { padding: 6px 7px; color: #81909f; font-size: 10px; line-height: 1.5; }
+      .lit-feed-detail-btn { margin-left: auto; border: 1px solid rgba(114,183,255,.25); background: rgba(114,183,255,.08); color: var(--dsw-alias-brand-primary, #9fd0ff); border-radius: 5px; padding: 3px 8px; font-size: 9.5px; }
+      .lit-feed-empty-hint { padding: 6px 7px; color: var(--dsw-alias-label-secondary, #81909f); font-size: 10px; line-height: 1.5; }
       .lit-feed-nonpaper-note { margin-top: 12px; padding: 8px 9px; border-radius: 6px; border: 1px solid rgba(245,196,81,.2); background: rgba(245,196,81,.06); color: #d8c08a; font-size: 10.5px; line-height: 1.5; }
       .lit-feed-detail-modal { width: min(720px, 100%); max-height: 86vh; overflow: auto; }
       .lit-feed-edit-modal { width: min(520px, 100%); }
       .lit-feed-detail-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 9px 0 0; color: var(--dsw-alias-label-secondary, #92a0ae); font-size: 10px; }
-      .lit-kind-select { height: 21px; border-radius: 4px; border: 1px solid rgba(255,255,255,.15); background: #17222d; color: #c9d6e3; font-size: 9.5px; padding: 0 4px; }
-      .lit-feed-detail-summary { margin-top: 13px; color: #a4b2c0; font-size: 12px; line-height: 1.7; white-space: pre-wrap; }
+      .lit-kind-select { height: 21px; border-radius: 4px; border: 1px solid rgba(255,255,255,.15); background: var(--dsw-alias-bg-layer-1, #17222d); color: #c9d6e3; font-size: 9.5px; padding: 0 4px; }
+      .lit-feed-detail-summary { margin-top: 13px; color: var(--dsw-alias-label-secondary, #a4b2c0); font-size: 12px; line-height: 1.7; white-space: pre-wrap; }
       .lit-schedule { border-top: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.08)); padding: 11px 12px 13px; }
       .lit-schedule-title { display: flex; align-items: center; justify-content: space-between; font-size: 10.5px; color: var(--dsw-alias-label-secondary, #92a0ae); }
       .lit-schedule-row { display: flex; align-items: center; gap: 6px; margin-top: 7px; font-size: 10px; }
@@ -4475,20 +4907,20 @@ window.__ModuleLoader__.load({
       .lit-cost-dot { width: 5px; height: 5px; border-radius: 50%; }
       .lit-budget { margin-top: 10px; }
       .lit-budget-line { height: 4px; border-radius: 4px; background: var(--dsw-alias-bg-base, #111820); overflow: hidden; }
-      .lit-budget-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #72b7ff, #f5c451); }
+      .lit-budget-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--dsw-alias-brand-primary, #72b7ff), #f5c451); }
       .lit-budget-label { display: flex; justify-content: space-between; color: var(--dsw-alias-label-secondary, #92a0ae); font-size: 9.5px; margin-top: 5px; }
       .lit-toggle { display: flex; align-items: center; gap: 6px; margin-top: 9px; color: var(--dsw-alias-label-secondary, #a4b2c0); font-size: 10px; }
       .lit-toggle input { accent-color: var(--dsw-alias-brand-primary, #72b7ff); }
       .lit-feedlistpane {
         min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.09));
-        background-color: #111820;
+        background-color: var(--dsw-alias-bg-base, #111820);
         background-image: linear-gradient(var(--dsw-alias-bg-base, #111820), var(--dsw-alias-bg-base, #111820));
       }
       .lit-feedlist-head { padding: 13px 13px 9px; border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.08)); }
       .lit-filters { display: flex; gap: 4px; margin-top: 9px; }
       .lit-filter { border: 1px solid transparent; background: transparent; color: var(--dsw-alias-label-secondary, #92a0ae); border-radius: 6px; padding: 3px 7px; font-size: 10px; }
       .lit-filter:hover { color: var(--dsw-alias-label-primary, #e8eef5); }
-      .lit-filter-active { color: #9fd0ff; background: rgba(114,183,255,.1); border-color: rgba(114,183,255,.25); }
+      .lit-filter-active { color: var(--dsw-alias-brand-primary, #9fd0ff); background: rgba(114,183,255,.1); border-color: rgba(114,183,255,.25); }
       .lit-feed-items { flex: 1 1 auto; min-height: 0; overflow: auto; }
       .lit-feed-item { padding: 11px 12px; border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.07)); cursor: pointer; outline: none; }
       .lit-feed-item:hover { background: var(--dsw-alias-bg-layer-1, #17222d); }
@@ -4499,21 +4931,21 @@ window.__ModuleLoader__.load({
       .lit-feed-title { margin-top: 6px; font-size: 12px; line-height: 1.4; font-weight: 600; }
       .lit-feed-source { margin-top: 4px; color: var(--dsw-alias-label-secondary, #92a0ae); font-size: 9.5px; }
       .lit-feed-snippet { margin-top: 5px; color: var(--dsw-alias-label-secondary, #81909f); font-size: 10px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-      .lit-unread-dot { width: 5px; height: 5px; border-radius: 50%; background: #72b7ff; display: inline-block; }
+      .lit-unread-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--dsw-alias-brand-primary, #72b7ff); display: inline-block; }
       .lit-feed-item-read:not(.lit-feed-item-active) { opacity: .5; }
       .lit-feed-item-read .lit-feed-title { font-weight: 500; }
       .lit-feed-item-read .lit-feed-snippet { display: none; }
       .lit-read-label { display: inline-flex; align-items: center; gap: 4px; margin-left: 7px; color: var(--dsw-alias-label-secondary, #7f8c99); font-size: 9.5px; }
-      .lit-unread-label { display: inline-flex; align-items: center; gap: 4px; margin-left: 7px; color: #9fd0ff; font-size: 9.5px; }
+      .lit-unread-label { display: inline-flex; align-items: center; gap: 4px; margin-left: 7px; color: var(--dsw-alias-brand-primary, #9fd0ff); font-size: 9.5px; }
       .lit-feeddetail {
         min-width: 0; min-height: 0; overflow: auto; padding: 24px 28px 40px;
-        background-color: #111820;
+        background-color: var(--dsw-alias-bg-base, #111820);
         background-image: linear-gradient(var(--dsw-alias-bg-base, #111820), var(--dsw-alias-bg-base, #111820));
       }
       .lit-feeddetail-title { font-size: 21px; line-height: 1.35; font-weight: 680; margin: 7px 0; }
       .lit-feeddetail-meta { color: var(--dsw-alias-label-secondary, #92a0ae); font-size: 11px; }
       .lit-ai-card { margin-top: 18px; padding: 11px 12px; border-radius: 9px; background: rgba(114,183,255,.06); border: 1px solid rgba(114,183,255,.18); }
-      .lit-ai-card-head { display: flex; align-items: center; gap: 7px; color: #9fd0ff; font-size: 11px; font-weight: 650; }
+      .lit-ai-card-head { display: flex; align-items: center; gap: 7px; color: var(--dsw-alias-brand-primary, #9fd0ff); font-size: 11px; font-weight: 650; }
       .lit-ai-card-head .lit-ai-badge { margin-left: auto; }
       .lit-ai-reason { margin-top: 7px; color: var(--dsw-alias-label-secondary, #a4b2c0); line-height: 1.6; font-size: 11px; }
       .lit-ai-meta { margin-top: 5px; color: var(--dsw-alias-label-secondary, #6f7f8e); font-size: 9.5px; }
@@ -4529,19 +4961,19 @@ window.__ModuleLoader__.load({
       }
       .lit-graph-controls {
         min-height: 0; overflow: auto; padding: 17px 14px; border-right: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.09));
-        background-color: #17222d;
+        background-color: var(--dsw-alias-bg-layer-1, #17222d);
         background-image: linear-gradient(var(--dsw-alias-bg-layer-1, #17222d), var(--dsw-alias-bg-layer-1, #17222d));
       }
       .lit-graph-canvas {
         min-height: 0; position: relative; overflow: hidden;
-        background-color: #111820;
+        background-color: var(--dsw-alias-bg-base, #111820);
         background-image: radial-gradient(circle at 50% 45%, rgba(114,183,255,.045), transparent 55%),
           linear-gradient(var(--dsw-alias-bg-base, #111820), var(--dsw-alias-bg-base, #111820));
       }
       .lit-graph-canvas svg { width: 100%; height: 100%; display: block; }
       .lit-graph-inspector {
         min-height: 0; overflow: auto; padding: 19px 17px; border-left: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.09));
-        background-color: #17222d;
+        background-color: var(--dsw-alias-bg-layer-1, #17222d);
         background-image: linear-gradient(var(--dsw-alias-bg-layer-1, #17222d), var(--dsw-alias-bg-layer-1, #17222d));
       }
       .lit-graph-node { cursor: pointer; }
@@ -4554,17 +4986,17 @@ window.__ModuleLoader__.load({
       .lit-segment { display: flex; border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.12)); border-radius: 7px; overflow: hidden; }
       .lit-segment button { flex: 1 1 0; border: 0; background: transparent; color: var(--dsw-alias-label-secondary, #92a0ae); padding: 5px 4px; font-size: 10px; }
       .lit-segment button:hover { color: var(--dsw-alias-label-primary, #e8eef5); }
-      .lit-segment button.active { background: rgba(114,183,255,.14); color: #9fd0ff; }
+      .lit-segment button.active { background: rgba(114,183,255,.14); color: var(--dsw-alias-brand-primary, #9fd0ff); }
       .lit-select {
         width: 100%; border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.12)); border-radius: 7px;
-        background-color: #111820;
+        background-color: var(--dsw-alias-bg-base, #111820);
         background-image: linear-gradient(var(--dsw-alias-bg-base, #111820), var(--dsw-alias-bg-base, #111820));
         color: var(--dsw-alias-label-primary, #e8eef5);
         padding: 6px 7px; font-size: 11px; outline: none;
       }
       .lit-range-row { display: flex; align-items: center; gap: 7px; }
       .lit-range-row input { flex: 1 1 auto; accent-color: var(--dsw-alias-brand-primary, #72b7ff); }
-      .lit-range-value { color: #9fd0ff; font-size: 10px; min-width: 26px; text-align: right; }
+      .lit-range-value { color: var(--dsw-alias-brand-primary, #9fd0ff); font-size: 10px; min-width: 26px; text-align: right; }
       .lit-legend { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
       .lit-legend-row { display: flex; align-items: center; gap: 6px; color: var(--dsw-alias-label-secondary, #a4b2c0); font-size: 10px; }
       .lit-legend-dot { width: 7px; height: 7px; border-radius: 50%; }
@@ -4581,8 +5013,8 @@ window.__ModuleLoader__.load({
       .lit-modal {
         width: min(900px, 100%); max-height: min(80%, 720px); overflow: auto; border-radius: 13px;
         border: 1px solid var(--dsw-alias-border-l2, rgba(255,255,255,.16));
-        background-color: #1c2834;
-        background-image: linear-gradient(var(--dsw-alias-bg-overlay, #1c2834), var(--dsw-alias-bg-overlay, #1c2834));
+        background-color: var(--dsw-alias-bg-layer-2, #1c2834);
+        background-image: linear-gradient(var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-2, #1c2834)), var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-2, #1c2834)));
         box-shadow: 0 24px 70px rgba(0,0,0,.5); padding: 19px 20px;
       }
       .lit-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; }
@@ -4591,19 +5023,19 @@ window.__ModuleLoader__.load({
       .lit-matrix-wrap { overflow: auto; border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.1)); border-radius: 8px; }
       .lit-matrix { width: 100%; border-collapse: collapse; font-size: 10.5px; }
       .lit-matrix th, .lit-matrix td { padding: 8px 9px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.07)); border-right: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.06)); min-width: 130px; }
-      .lit-matrix thead th { color: #9fd0ff; background: rgba(114,183,255,.06); font-weight: 600; }
+      .lit-matrix thead th { color: var(--dsw-alias-brand-primary, #9fd0ff); background: rgba(114,183,255,.06); font-weight: 600; }
       .lit-matrix tbody th { color: var(--dsw-alias-label-secondary, #a4b2c0); font-weight: 600; white-space: nowrap; background: rgba(255,255,255,.02); }
       .lit-matrix td { color: var(--dsw-alias-label-secondary, #a4b2c0); line-height: 1.45; }
       .lit-summary-actions { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
       .lit-section-card {
         margin-top: 10px; padding: 11px 12px 12px; border-radius: 9px;
         border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.1));
-        background-color: #17222d;
+        background-color: var(--dsw-alias-bg-layer-1, #17222d);
         background-image: linear-gradient(var(--dsw-alias-bg-layer-1, #17222d), var(--dsw-alias-bg-layer-1, #17222d));
       }
       .lit-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
       .lit-section-title-wrap { display: flex; align-items: center; gap: 7px; min-width: 0; flex-wrap: wrap; }
-      .lit-section-type-icon { color: #9fd0ff; display: inline-flex; }
+      .lit-section-type-icon { color: var(--dsw-alias-brand-primary, #9fd0ff); display: inline-flex; }
       .lit-section-title { font-size: 12.5px; font-weight: 650; }
       .lit-type-badge { font-size: 9px; color: var(--dsw-alias-label-secondary, #92a0ae); border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.12)); border-radius: 5px; padding: 1px 5px; }
       .lit-section-actions { display: flex; align-items: center; gap: 5px; }
@@ -4618,10 +5050,10 @@ window.__ModuleLoader__.load({
         background: transparent; color: var(--dsw-alias-label-secondary, #92a0ae);
         display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 11px;
       }
-      .lit-add-section:hover { color: #9fd0ff; border-color: rgba(114,183,255,.45); background: rgba(114,183,255,.05); }
+      .lit-add-section:hover { color: var(--dsw-alias-brand-primary, #9fd0ff); border-color: rgba(114,183,255,.45); background: rgba(114,183,255,.05); }
       .lit-rating-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 7px; }
       .lit-stars { display: flex; align-items: center; gap: 1px; }
-      .lit-star { border: 0; background: transparent; color: #6f7f8e; padding: 2px; border-radius: 4px; line-height: 0; }
+      .lit-star { border: 0; background: transparent; color: var(--dsw-alias-label-secondary, #6f7f8e); padding: 2px; border-radius: 4px; line-height: 0; }
       .lit-star:hover { color: #ffd166; background: rgba(255,209,102,.08); }
       .lit-star-on { color: #f5c451; }
       .lit-rating-label { color: #f5c451; font-size: 11px; font-weight: 600; min-width: 40px; }
@@ -4641,8 +5073,8 @@ window.__ModuleLoader__.load({
         background: transparent; color: var(--dsw-alias-label-secondary, #a4b2c0);
         padding: 3px 8px; font-size: 10px;
       }
-      .lit-tag-option:hover { border-color: rgba(114,183,255,.45); color: #9fd0ff; }
-      .lit-tag-option-on { color: #9fd0ff; background: rgba(114,183,255,.13); border-color: rgba(114,183,255,.4); }
+      .lit-tag-option:hover { border-color: rgba(114,183,255,.45); color: var(--dsw-alias-brand-primary, #9fd0ff); }
+      .lit-tag-option-on { color: var(--dsw-alias-brand-primary, #9fd0ff); background: rgba(114,183,255,.13); border-color: rgba(114,183,255,.4); }
       .lit-read-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 7px; }
       .lit-read-button {
         display: inline-flex; align-items: center; gap: 5px; border-radius: 7px;
@@ -4652,6 +5084,8 @@ window.__ModuleLoader__.load({
       .lit-read-button-on { color: #7fe0b0; background: rgba(127,224,176,.1); border-color: rgba(127,224,176,.3); }
       .lit-group-manager { width: min(760px, 100%); }
       .lit-group-manager-list { margin-top: 13px; max-height: 300px; overflow: auto; }
+      .lit-group-move { display: inline-flex; flex-direction: column; gap: 1px; }
+      .lit-group-move .lit-icon-btn { width: 20px; height: 16px; font-size: 10px; }
       .lit-group-manager-row {
         display: grid; grid-template-columns: 28px minmax(0,1fr) 128px 26px;
         gap: 8px; align-items: center; padding: 7px 0;
@@ -4667,8 +5101,8 @@ window.__ModuleLoader__.load({
       .lit-context-menu {
         position: absolute; z-index: 71; width: 238px; padding: 5px;
         border-radius: 9px; border: 1px solid var(--dsw-alias-border-l2, rgba(255,255,255,.18));
-        background-color: #1c2834;
-        background-image: linear-gradient(var(--dsw-alias-bg-overlay, #1c2834), var(--dsw-alias-bg-overlay, #1c2834));
+        background-color: var(--dsw-alias-bg-layer-2, #1c2834);
+        background-image: linear-gradient(var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-2, #1c2834)), var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-2, #1c2834)));
         box-shadow: 0 14px 38px rgba(0,0,0,.45);
       }
       .lit-context-head {
@@ -4682,9 +5116,11 @@ window.__ModuleLoader__.load({
         font-size: 11px; text-align: left;
       }
       .lit-context-item:hover { background: var(--dsw-alias-bg-layer-2, #22303d); }
+      .lit-context-move-row { display: flex; gap: 4px; }
+      .lit-context-move-row .lit-context-item { flex: 1 1 0; justify-content: center; }
       .lit-context-item .lit-dot { flex: 0 0 auto; }
       .lit-context-item .lit-icon { margin-left: auto; }
-      .lit-context-item-on { color: #9fd0ff; }
+      .lit-context-item-on { color: var(--dsw-alias-brand-primary, #9fd0ff); }
       .lit-context-item-on svg { margin-left: auto; }
       .lit-context-danger { color: var(--dsw-alias-state-error-primary, #ff9f9f); }
       .lit-context-sep { height: 1px; margin: 4px 6px; background: var(--dsw-alias-border-l1, rgba(255,255,255,.1)); }
@@ -4722,18 +5158,18 @@ window.__ModuleLoader__.load({
       .lit-feed-item-read { opacity: .62; }
       .lit-feed-item-title { font-size: 12px; line-height: 1.45; color: var(--dsw-alias-label-primary, #e8eef5); }
       .lit-feed-item-meta { margin-top: 4px; font-size: 9.5px; color: var(--dsw-alias-label-secondary, #92a0ae); }
-      .lit-feed-item-summary { margin-top: 5px; font-size: 10px; line-height: 1.5; color: #81909f; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      .lit-feed-item-summary { margin-top: 5px; font-size: 10px; line-height: 1.5; color: var(--dsw-alias-label-secondary, #81909f); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
       .lit-feed-item-actions { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
       .lit-backup-list { margin-top: 8px; border-top: 1px solid rgba(255,255,255,.08); }
       .lit-backup-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 8px 2px; border-bottom: 1px solid rgba(255,255,255,.06); }
-      .lit-backup-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: #c7d4e1; }
-      .lit-backup-meta { color: #81909f; font-size: 9.5px; }
-      .lit-file-input { max-width: 240px; color: #a4b2c0; font-size: 10px; }
+      .lit-backup-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--dsw-alias-label-primary, #c7d4e1); }
+      .lit-backup-meta { color: var(--dsw-alias-label-secondary, #81909f); font-size: 9.5px; }
+      .lit-file-input { max-width: 240px; color: var(--dsw-alias-label-secondary, #a4b2c0); font-size: 10px; }
       .lit-metadata-modal { width: min(620px, 100%); }
       .lit-metadata-body { padding: 4px 2px 6px; }
       .lit-metadata-copy { color: var(--dsw-alias-label-secondary, #a4b2c0); font-size: 11.5px; line-height: 1.65; margin: 10px 0 0; }
       .lit-metadata-source { margin-top: 12px; padding: 8px 9px; border-radius: 6px; background: rgba(255,255,255,.03); border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.09)); color: var(--dsw-alias-label-secondary, #81909f); font-size: 10px; overflow-wrap: anywhere; }
-      .lit-metadata-source a { color: #9fd0ff; }
+      .lit-metadata-source a { color: var(--dsw-alias-brand-primary, #9fd0ff); }
       .lit-metadata-missing { color: #b8a98a; }
       .lit-edit-modal { width: min(660px, 100%); }
       .lit-edit-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; margin-top: 14px; }
@@ -4754,14 +5190,26 @@ window.__ModuleLoader__.load({
         display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
         min-height: 132px; padding: 18px; border-radius: 10px; cursor: pointer;
         border: 1px dashed rgba(114,183,255,.45); background: rgba(114,183,255,.045);
-        color: #9fd0ff; text-align: center; transition: background .15s ease, border-color .15s ease;
+        color: var(--dsw-alias-brand-primary, #9fd0ff); text-align: center; transition: background .15s ease, border-color .15s ease;
       }
       .lit-dropzone:hover { background: rgba(114,183,255,.09); border-color: rgba(114,183,255,.7); }
       .lit-dropzone-file { border-style: solid; border-color: rgba(127,224,176,.45); background: rgba(127,224,176,.055); color: #7fe0b0; }
       .lit-dropzone-title { font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-primary, #dce7f2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .lit-dropzone-sub { font-size: 10px; color: var(--dsw-alias-label-secondary, #7f8c99); }
       .lit-import-file-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 7px; color: var(--dsw-alias-label-secondary, #92a0ae); font-size: 10px; }
-      .lit-link-btn { border: 0; background: none; color: #9fd0ff; cursor: pointer; font-size: 10px; padding: 0; text-decoration: underline; }
+      .lit-import-center { width: min(780px, 100%); max-height: 88vh; overflow: auto; }
+      .lit-import-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 14px 0 2px; }
+      .lit-import-inline { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+      .lit-import-inline .lit-input, .lit-import-inline .lit-select { min-width: 0; flex: 1 1 0; }
+      .lit-import-progress { margin-top: 12px; padding: 9px 11px; border-radius: 7px; background: color-mix(in srgb, var(--dsw-alias-brand-primary, #72b7ff) 10%, transparent); color: var(--dsw-alias-label-primary, #e8eef5); font-size: 11.5px; }
+      .lit-import-result { margin-top: 14px; padding: 11px; border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.1)); border-radius: 8px; }
+      .lit-import-result-title { font-weight: 650; font-size: 12px; }
+      .lit-import-result-sub { margin-top: 3px; color: var(--dsw-alias-label-secondary, #92a0ae); font-size: 10.5px; }
+      .lit-import-result-row { margin-top: 5px; font-size: 11px; color: var(--dsw-alias-label-secondary, #92a0ae); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .lit-import-result-error { margin-top: 6px; color: var(--dsw-alias-state-error-primary, #ff9f9f); font-size: 10.5px; }
+      .lit-translation-modal { width: min(840px, 100%); max-height: 82vh; overflow: auto; }
+      .lit-translation-body { margin-top: 12px; max-height: 52vh; overflow: auto; white-space: pre-wrap; line-height: 1.65; font-size: 12px; color: var(--dsw-alias-label-primary, #e8eef5); }
+      .lit-link-btn { border: 0; background: none; color: var(--dsw-alias-brand-primary, #9fd0ff); cursor: pointer; font-size: 10px; padding: 0; text-decoration: underline; }
       .lit-import-divider { display: flex; align-items: center; gap: 8px; margin: 14px 0 8px; color: var(--dsw-alias-label-secondary, #6f7f8e); font-size: 9.5px; }
       .lit-import-divider::before, .lit-import-divider::after { content: ''; height: 1px; flex: 1; background: var(--dsw-alias-border-l1, rgba(255,255,255,.1)); }
       .lit-pdf-modal {
@@ -4777,7 +5225,7 @@ window.__ModuleLoader__.load({
       .lit-settings-modal { width: min(940px, 100%); max-height: min(90%, 980px); display: flex; flex-direction: column; }
       .lit-settings-tabs { display: flex; gap: 4px; margin-top: 12px; border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.1)); }
       .lit-settings-tab { border: 0; background: transparent; color: var(--dsw-alias-label-secondary, #92a0ae); padding: 8px 11px; border-bottom: 2px solid transparent; font-size: 11px; }
-      .lit-settings-tab.active { color: #9fd0ff; border-bottom-color: #72b7ff; }
+      .lit-settings-tab.active { color: var(--dsw-alias-brand-primary, #9fd0ff); border-bottom-color: var(--dsw-alias-brand-primary, #72b7ff); }
       .lit-settings-body { overflow: auto; padding: 12px 2px 2px; }
       .lit-settings-section-title { font-size: 11px; font-weight: 650; color: var(--dsw-alias-label-primary, #e8eef5); margin-bottom: 6px; }
       .lit-settings-edit { display: flex; flex-direction: column; gap: 6px; width: 100%; }
@@ -4801,12 +5249,12 @@ window.__ModuleLoader__.load({
       .lit-if-list { display: flex; flex-direction: column; gap: 3px; margin-top: 10px; }
       .lit-if-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.07)); font-size: 10.5px; }
       .lit-if-journal { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .lit-if-value { color: #9fd0ff; font-variant-numeric: tabular-nums; }
+      .lit-if-value { color: var(--dsw-alias-brand-primary, #9fd0ff); font-variant-numeric: tabular-nums; }
       .lit-template-modal { width: min(980px, 100%); }
       .lit-template-columns { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; margin-top: 15px; }
       .lit-template-panel {
         border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.1)); border-radius: 9px;
-        background-color: #17222d;
+        background-color: var(--dsw-alias-bg-layer-1, #17222d);
         background-image: linear-gradient(var(--dsw-alias-bg-layer-1, #17222d), var(--dsw-alias-bg-layer-1, #17222d));
         padding: 12px; min-width: 0;
       }
@@ -4818,7 +5266,7 @@ window.__ModuleLoader__.load({
         background: var(--dsw-alias-bg-layer-2, #22303d); color: var(--dsw-alias-label-secondary, #a4b2c0);
         font-size: 9.5px;
       }
-      .lit-template-chip-type { color: #7f8c99; font-size: 8.5px; }
+      .lit-template-chip-type { color: var(--dsw-alias-label-secondary, #7f8c99); font-size: 8.5px; }
       .lit-template-actions { display: flex; flex-direction: column; gap: 7px; margin-top: 13px; }
       .lit-inline-form { display: flex; gap: 5px; align-items: center; }
       .lit-inline-form .lit-select { min-width: 0; }
@@ -4834,8 +5282,8 @@ window.__ModuleLoader__.load({
       .lit-graph-tooltip {
         position: absolute; z-index: 15; max-width: 290px; pointer-events: none;
         padding: 9px 10px; border-radius: 8px; border: 1px solid var(--dsw-alias-border-l2, rgba(255,255,255,.18));
-        background-color: #1c2834;
-        background-image: linear-gradient(var(--dsw-alias-bg-overlay, #1c2834), var(--dsw-alias-bg-overlay, #1c2834));
+        background-color: var(--dsw-alias-bg-layer-2, #1c2834);
+        background-image: linear-gradient(var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-2, #1c2834)), var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-2, #1c2834)));
         box-shadow: 0 10px 26px rgba(0,0,0,.38);
       }
       .lit-graph-tooltip-title { font-size: 11.5px; font-weight: 650; line-height: 1.4; }
@@ -4847,8 +5295,8 @@ window.__ModuleLoader__.load({
         position: absolute; z-index: 100; left: 50%; bottom: 24px; transform: translateX(-50%);
         max-width: min(620px, calc(100% - 40px)); display: flex; align-items: center; gap: 7px;
         padding: 9px 13px; border-radius: 8px; border: 1px solid var(--dsw-alias-border-l2, rgba(255,255,255,.16));
-        background-color: #1c2834;
-        background-image: linear-gradient(var(--dsw-alias-bg-overlay, #1c2834), var(--dsw-alias-bg-overlay, #1c2834));
+        background-color: var(--dsw-alias-bg-layer-2, #1c2834);
+        background-image: linear-gradient(var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-2, #1c2834)), var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-2, #1c2834)));
         color: var(--dsw-alias-label-primary, #e8eef5); box-shadow: 0 10px 28px rgba(0,0,0,.35);
         font-size: 11px; line-height: 1.4;
       }
@@ -4866,9 +5314,37 @@ window.__ModuleLoader__.load({
         .lit-graph { grid-template-columns: 190px minmax(0, 1fr); }
         .lit-graph-inspector { display: none; }
       }
+      .lit-theme-light { color: var(--dsw-alias-label-primary, #1f2937); }
+      .lit-theme-light :is(.lit-soft-badge, .lit-feed-kind, .lit-status, .lit-ai-badge, .lit-journal-badge, .lit-section-label, .lit-kv-label) {
+        color: var(--dsw-alias-label-primary, #1f2937);
+        border-color: color-mix(in srgb, var(--dsw-alias-label-primary, #1f2937) 16%, transparent);
+        background: color-mix(in srgb, var(--dsw-alias-label-primary, #1f2937) 5%, transparent);
+      }
+      .lit-theme-light :is(.lit-feed-card, .lit-paper-row, .lit-group-pane, .lit-listpane, .lit-detail-main, .lit-context-menu, .lit-group-menu, .lit-bulk-group-menu, .lit-modal) {
+        background-color: var(--dsw-alias-bg-layer-1, #f7f8fa);
+        color: var(--dsw-alias-label-primary, #1f2937);
+      }
+      .lit-theme-light :is(.lit-feed-card-summary, .lit-feed-card-source, .lit-author-authors, .lit-author-abstract, .lit-paper-meta, .lit-subtitle, .lit-context-label, .lit-section-body, .lit-kv-value) {
+        color: var(--dsw-alias-label-secondary, #5f6b7a);
+      }
+      .lit-theme-light :is(.lit-feed-card, .lit-paper-row):hover { background-color: var(--dsw-alias-bg-layer-2, #eef1f5); }
+      .lit-theme-light .lit-ai-stars { color: #8a6500; }
+      .lit-theme-light .lit-ai-score-reason { color: #68520a; }
+      .lit-theme-light .lit-ai-score-why { color: #5f594d; }
+      .lit-theme-light .lit-warn-line { color: #72540b; background: rgba(245,196,81,.10); }
+      .lit-theme-light :is(.lit-input, .lit-textarea, .lit-select, .lit-search-input) {
+        background: var(--dsw-alias-bg-base, #fff);
+        color: var(--dsw-alias-label-primary, #1f2937);
+        border-color: var(--dsw-alias-border-l2, rgba(0,0,0,.18));
+      }
+      .lit-group-menu, .lit-context-menu, .lit-bulk-group-menu {
+        max-height: min(70vh, 520px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
     `;
 
-    function LitWorkspace({ t }) {
+    function LitWorkspace({ t, translatePage }) {
       const L = (key, fallback) => {
         try {
           const value = t ? t(key) : '';
@@ -4889,6 +5365,14 @@ window.__ModuleLoader__.load({
       const [tagDrafts, setTagDrafts] = useState({});
       const [tagLibrary, setTagLibrary] = useState([]);
       const [importOpen, setImportOpen] = useState(false);
+      const [importCenterOpen, setImportCenterOpen] = useState(false);
+      const [paperSort, setPaperSort] = useState(() => {
+        try {
+          return window.localStorage.getItem('dsh-lit-paper-sort') || 'manual';
+        } catch (error) {
+          return 'manual';
+        }
+      });
       const [attachTarget, setAttachTarget] = useState(null);
       const [importFile, setImportFile] = useState(null);
       const [importPath, setImportPath] = useState('');
@@ -4992,14 +5476,73 @@ window.__ModuleLoader__.load({
       const [batchRevalidateProgress, setBatchRevalidateProgress] = useState('');
       const [metadataEnriching, setMetadataEnriching] = useState(false);
       const [metadataOnlyPaper, setMetadataOnlyPaper] = useState(null);
+      const [manualEvidence, setManualEvidence] = useState(null);
       const [acceptingSummary, setAcceptingSummary] = useState(false);
       const canvasRef = useRef(null);
       const rootRef = useRef(null);
+      const [lightTheme, setLightTheme] = useState(false);
+      const [translation, setTranslation] = useState({ open: false, busy: false, text: '', error: '' });
       const paperHashesRef = useRef({});
       const groupSaveTimersRef = useRef({});
       const groupDraftsRef = useRef({});
       const hashPaper = (paper) =>
         JSON.stringify({ sections: paper.summary?.sections || [], groups: paper.groups || [] });
+
+      const runPageTranslation = async () => {
+        setTranslation({ open: true, busy: true, text: '', error: '' });
+        try {
+          if (typeof translatePage !== 'function') throw new Error('内置翻译服务不可用');
+          const content = rootRef.current?.querySelector('.lit-content') || rootRef.current;
+          const source = String(content?.innerText || '').trim();
+          if (!source) throw new Error('当前页面没有可翻译的文字');
+          const text = await translatePage(source.slice(0, 12000));
+          setTranslation({ open: true, busy: false, text, error: '' });
+        } catch (error) {
+          setTranslation({ open: true, busy: false, text: '', error: error.message });
+        }
+      };
+
+      useEffect(() => {
+        const detectTheme = () => {
+          if (typeof getComputedStyle !== 'function') return;
+          if (document.body?.hasAttribute('data-ds-dark-theme')) {
+            setLightTheme(false);
+            return;
+          }
+          const source = document.documentElement?.getAttribute('data-ds-theme-source');
+          if (source === 'light') {
+            setLightTheme(true);
+            return;
+          }
+          if (source === 'dark') {
+            setLightTheme(false);
+            return;
+          }
+          const candidates = [rootRef.current, document.body, document.documentElement].filter(Boolean);
+          for (const element of candidates) {
+            const value = getComputedStyle(element).backgroundColor || '';
+            const parts = value.match(/[\d.]+/g)?.map(Number) || [];
+            if (parts.length < 3) continue;
+            if (parts.length > 3 && parts[3] === 0) continue;
+            const [r, g, b] = parts;
+            const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+            setLightTheme(luminance > 0.55);
+            return;
+          }
+        };
+        detectTheme();
+        if (typeof MutationObserver !== 'function') return undefined;
+        const observer = new MutationObserver(detectTheme);
+        observer.observe(document.documentElement, {
+          attributes: true,
+          attributeFilter: ['class', 'style', 'data-theme', 'data-ds-theme-source'],
+        });
+        observer.observe(document.body, {
+          attributes: true,
+          attributeFilter: ['class', 'style', 'data-theme', 'data-ds-dark-theme'],
+        });
+        return () => observer.disconnect();
+      }, []);
 
       useEffect(() => {
         if (dataSource !== 'real') return undefined;
@@ -5737,7 +6280,7 @@ window.__ModuleLoader__.load({
               ? `PDF 已关联到：${body.paper?.title?.slice(0, 60) || ''}`
               : body.duplicate
                 ? `这篇 PDF 已在库中：${body.paper?.title?.slice(0, 50) || ''}`
-                : 'PDF 已导入真实库，并保存到 library storage'
+                : 'PDF 已导入文献库，并保存到本地存储'
           );
         } catch (error) {
           setToast(`导入失败：${error.message}`);
@@ -5986,7 +6529,7 @@ window.__ModuleLoader__.load({
       const filteredPapers = useMemo(() => {
         const needle = query.trim().toLowerCase();
         const serverSearchActive = dataSource === 'real' && Boolean(needle) && searchIds !== null;
-        return state.papers.filter((paper) => {
+        const rows = state.papers.filter((paper) => {
           const groupOk =
             selectedGroups.length === 0 ||
             (groupFilterLogic === 'or'
@@ -5997,7 +6540,12 @@ window.__ModuleLoader__.load({
           const searchOk = serverSearchActive ? searchIds.includes(paper.id) : clientSearchOk;
           return groupOk && searchOk;
         });
-      }, [state.papers, selectedGroups, groupFilterLogic, query, dataSource, searchIds]);
+        if (paperSort === 'title') rows.sort((a, b) => String(a.title).localeCompare(String(b.title), 'zh-CN'));
+        if (paperSort === 'year-desc') rows.sort((a, b) => Number(b.year || 0) - Number(a.year || 0));
+        if (paperSort === 'year-asc') rows.sort((a, b) => Number(a.year || 0) - Number(b.year || 0));
+        if (paperSort === 'venue') rows.sort((a, b) => String(a.venue || '').localeCompare(String(b.venue || ''), 'zh-CN'));
+        return rows;
+      }, [state.papers, selectedGroups, groupFilterLogic, query, dataSource, searchIds, paperSort]);
 
       useEffect(() => {
         if (filteredPapers.length > 0 && !filteredPapers.some((paper) => paper.id === selectedPaper)) {
@@ -6090,7 +6638,7 @@ window.__ModuleLoader__.load({
 
       const nodeColor = (node) => {
         if (state.graphColorMode === 'cluster') return CLUSTER_COLORS[clusterOf(node) % CLUSTER_COLORS.length];
-        return groupById[node.group] ? groupById[node.group].color : '#92a0ae';
+        return groupById[node.group] ? groupById[node.group].color : 'var(--dsw-alias-label-secondary, #92a0ae)';
       };
 
       const selectPaper = (paperId) => {
@@ -6251,7 +6799,7 @@ window.__ModuleLoader__.load({
           setSelectedPaper('');
           setContextMenu(null);
           setDeleteConfirmOpen(false);
-          setToast(dataSource === 'real' ? `已从真实库删除 ${ids.length} 篇论文` : '已从演示库删除选中论文');
+          setToast(`已从文献库删除 ${ids.length} 篇论文`);
         } catch (error) {
           setToast(`删除失败：${error.message}`);
         } finally {
@@ -6537,6 +7085,54 @@ window.__ModuleLoader__.load({
           if (group) group.color = color;
         });
         scheduleGroupSave(groupId, { color });
+      };
+
+      const moveGroup = async (groupId, direction) => {
+        const ordered = [...state.groups];
+        const index = ordered.findIndex((group) => group.id === groupId);
+        const target = index + direction;
+        if (index < 0 || target < 0 || target >= ordered.length) return;
+        const [moved] = ordered.splice(index, 1);
+        ordered.splice(target, 0, moved);
+        mutate((next) => {
+          next.groups = ordered;
+        });
+        if (dataSource !== 'real') return;
+        try {
+          const response = await fetch(`${DSH_LIT_API_BASE}/api/groups/reorder`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ ids: ordered.map((group) => group.id) }),
+          });
+          if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            throw new Error(body.error || `HTTP ${response.status}`);
+          }
+        } catch (error) {
+          setToast(`分组顺序保存失败：${error.message}`);
+        }
+      };
+
+      const movePaper = async (paperId, direction) => {
+        const ordered = [...state.papers];
+        const index = ordered.findIndex((paper) => paper.id === paperId);
+        const target = index + direction;
+        if (index < 0 || target < 0 || target >= ordered.length) return;
+        const [moved] = ordered.splice(index, 1);
+        ordered.splice(target, 0, moved);
+        setState((previous) => ({ ...previous, papers: ordered }));
+        if (dataSource !== 'real') return;
+        try {
+          const response = await fetch(`${DSH_LIT_API_BASE}/api/papers/reorder`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ ids: ordered.map((paper) => paper.id) }),
+          });
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok || body.ok !== true) throw new Error(body.error || `HTTP ${response.status}`);
+        } catch (error) {
+          setToast(`文献顺序保存失败：${error.message}`);
+        }
       };
 
       const deleteGroup = async (groupId) => {
@@ -6916,7 +7512,7 @@ window.__ModuleLoader__.load({
         try {
           for (let index = 0; index < batchRevalidatePapers.length; index += 1) {
             const paper = batchRevalidatePapers[index];
-            setBatchRevalidateProgress(`校验 ${index + 1} / ${batchRevalidatePapers.length}`);
+            setBatchRevalidateProgress(`定位 ${index + 1} / ${batchRevalidatePapers.length}`);
             try {
               const response = await fetch(
                 `${DSH_LIT_API_BASE}/api/papers/${encodeURIComponent(paper.id)}/revalidate-citations`,
@@ -6937,7 +7533,7 @@ window.__ModuleLoader__.load({
             }
           }
           setToast(
-            `批量校验完成：${checked} 条，${located} 已定位，${missing} 未找到${failed ? `，${failed} 篇失败` : ''}`
+            `批量定位完成：${checked} 条，${located} 已定位，${missing} 未找到${failed ? `，${failed} 篇失败` : ''}`
           );
         } finally {
           setBatchRevalidateBusy(false);
@@ -6947,11 +7543,11 @@ window.__ModuleLoader__.load({
 
       const revalidateCitations = async () => {
         if (!selectedPaperData || dataSource !== 'real') {
-          setToast('只有真实库论文支持引用校验');
+          setToast('只有带 PDF 的文献支持引文定位');
           return;
         }
         if (citationCount === 0) {
-          setToast('当前论文没有可校验的引用');
+          setToast('当前论文没有可定位的引文');
           return;
         }
         setRevalidating(true);
@@ -6967,9 +7563,9 @@ window.__ModuleLoader__.load({
             ...previous,
             papers: previous.papers.map((item) => (item.id === updated.id ? updated : item)),
           }));
-          setToast(`校验 ${body.checked} 条：${body.located} 已定位，${body.missing} 未找到`);
+          setToast(`定位 ${body.checked} 条：${body.located} 已定位，${body.missing} 未找到`);
         } catch (error) {
-          setToast(`引用校验失败：${error.message}`);
+          setToast(`引文定位失败：${error.message}`);
         } finally {
           setRevalidating(false);
         }
@@ -7024,7 +7620,7 @@ window.__ModuleLoader__.load({
         const newPaper = {
           id: newId,
           title: item.title,
-          authors: 'RSS 导入 · demo',
+          authors: 'RSS 导入',
           year: 2026,
           venue: item.source,
           doi: '10.0000/litdemo.rss',
@@ -7262,10 +7858,26 @@ window.__ModuleLoader__.load({
                         },
                         h(Icon, { name: 'link', size: 12 }),
                         entry.page ? `p.${entry.page}` : '找证据'
+                      ),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'lit-link-btn',
+                          onClick: () =>
+                            setManualEvidence({
+                              paperId: selectedPaperData.id,
+                              sectionKey: section.key,
+                              entryId: entry.id,
+                              quote: entry.quote || '',
+                              page: entry.page || null,
+                            }),
+                        },
+                        '手动证据'
                       )
                     ),
                     entry.status === 'needs_recheck'
-                      ? h('div', { className: 'lit-warn-line' }, '文字已修改，引用需要复核。点右上角“更新引用”可模拟重新映射。')
+                      ? h('div', { className: 'lit-warn-line' }, '此条文字已修改，原引文位置可能失效。点右上角“重新定位引文”更新页码。')
                       : null
                   )
                 ),
@@ -7536,7 +8148,7 @@ window.__ModuleLoader__.load({
                       }
                     },
                   },
-                  h('span', { className: 'lit-dot', style: { background: '#9fd0ff' } }),
+                  h('span', { className: 'lit-dot', style: { background: 'var(--dsw-alias-brand-primary, #9fd0ff)' } }),
                   h('span', { className: 'lit-group-filter-name' }, '全部文献'),
                   h('span', { className: 'lit-group-count' }, groupCounts.all)
                 ),
@@ -7639,6 +8251,39 @@ window.__ModuleLoader__.load({
                   '导入'
                 ),
                 h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'lit-btn lit-btn-ghost',
+                    onClick: () => setImportCenterOpen(true),
+                    title: '批量 PDF、手动元数据、DOI、RIS 或 EndNote',
+                  },
+                  h(Icon, { name: 'file', size: 12 }),
+                  '批量 / 文献'
+                ),
+                h(
+                  'select',
+                  {
+                    className: 'lit-select',
+                    value: paperSort,
+                    title: '文献列表顺序',
+                    onChange: (event) => {
+                      const value = event.target.value;
+                      setPaperSort(value);
+                      try {
+                        window.localStorage.setItem('dsh-lit-paper-sort', value);
+                      } catch (error) {
+                        // Persisting the list preference is optional.
+                      }
+                    },
+                  },
+                  h('option', { value: 'manual' }, '手动顺序'),
+                  h('option', { value: 'title' }, '标题 A–Z'),
+                  h('option', { value: 'year-desc' }, '年份新→旧'),
+                  h('option', { value: 'year-asc' }, '年份旧→新'),
+                  h('option', { value: 'venue' }, '期刊 A–Z')
+                ),
+                h(
                   'label',
                   { className: 'lit-select-all' },
                   h('input', { type: 'checkbox', checked: allFilteredSelected, onChange: selectAllFiltered }),
@@ -7696,7 +8341,7 @@ window.__ModuleLoader__.load({
                         title: '按 quote 批量重新定位所选论文的引用',
                       },
                       h(Icon, { name: 'check', size: 12 }),
-                      batchRevalidateBusy ? batchRevalidateProgress || '校验中…' : '校验引用'
+                      batchRevalidateBusy ? batchRevalidateProgress || '定位中…' : '重新定位引文'
                     ),
                     h(
                       'div',
@@ -7814,7 +8459,7 @@ window.__ModuleLoader__.load({
                         h(
                           'span',
                           { className: selectedPaperData.pdfPath ? 'lit-soft-badge' : 'lit-soft-badge lit-meta-only' },
-                          dataSource === 'real' ? (selectedPaperData.pdfPath ? 'LOCAL PDF' : 'METADATA ONLY') : 'DEMO PAPER'
+                          dataSource === 'real' ? (selectedPaperData.pdfPath ? '本地 PDF' : '仅元数据') : '文献'
                         ),
                         h('span', null, selectedPaperData.venue),
                         h('span', null, selectedPaperData.year),
@@ -8099,10 +8744,10 @@ window.__ModuleLoader__.load({
                               : realSaveState === 'error'
                                 ? '保存失败，请检查 litd'
                                 : dirtyCount > 0
-                                  ? `${dirtyCount} 条引用待复核 · 编辑已自动保存到 SQLite`
+                                  ? `${dirtyCount} 条引文需重新定位 · 编辑已自动保存`
                                   : '全部已更新 · 编辑已自动保存到 SQLite'
                             : dirtyCount > 0
-                              ? `${dirtyCount} 条引用待复核 · 编辑已自动保存到本地`
+                              ? `${dirtyCount} 条引文需重新定位 · 编辑已自动保存`
                               : '全部已更新 · 编辑已自动保存到本地'
                         )
                       )
@@ -8264,7 +8909,7 @@ window.__ModuleLoader__.load({
                         onClick: () => setSelectedFeed(feed.id),
                         title: feed.url,
                       },
-                      h('span', { className: 'lit-dot', style: { background: feed.last_error ? '#ff9f9f' : '#72b7ff' } }),
+                      h('span', { className: 'lit-dot', style: { background: feed.last_error ? '#ff9f9f' : 'var(--dsw-alias-brand-primary, #72b7ff)' } }),
                       h(
                         'span',
                         { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
@@ -8819,7 +9464,7 @@ window.__ModuleLoader__.load({
                     width: Math.abs(selectionBox.x2 - selectionBox.x1),
                     height: Math.abs(selectionBox.y2 - selectionBox.y1),
                     fill: 'rgba(114,183,255,.1)',
-                    stroke: '#72b7ff',
+                    stroke: 'var(--dsw-alias-brand-primary, #72b7ff)',
                     strokeWidth: 1.2,
                     strokeDasharray: '5 4',
                     pointerEvents: 'none',
@@ -8945,7 +9590,7 @@ window.__ModuleLoader__.load({
                   h(
                     'div',
                     { className: 'lit-kv' },
-                    h('span', { className: 'lit-kv-label' }, '待复核'),
+                    h('span', { className: 'lit-kv-label' }, '待定位'),
                     h(
                       'span',
                       { className: 'lit-kv-value' },
@@ -9003,7 +9648,7 @@ window.__ModuleLoader__.load({
 
       return h(
         'div',
-        { className: 'lit-root', 'data-testid': 'lit-root', ref: rootRef },
+        { className: lightTheme ? 'lit-root lit-theme-light' : 'lit-root', 'data-testid': 'lit-root', ref: rootRef },
         h('style', null, CSS),
         h(
           'header',
@@ -9015,13 +9660,7 @@ window.__ModuleLoader__.load({
             h(
               'div',
               { className: 'lit-brand-text' },
-              h(
-                'div',
-                { className: 'lit-title' },
-                L('nav', '文献工作台'),
-                h('span', { className: 'lit-badge-demo' }, 'DEMO')
-              ),
-              h('div', { className: 'lit-subtitle' }, '可编辑证据 · 分组镜头 · RSS 追踪')
+              h('div', { className: 'lit-title' }, L('nav', '文献工作台'))
             )
           ),
           h(
@@ -9039,14 +9678,41 @@ window.__ModuleLoader__.load({
               h(Icon, { name: 'refresh', size: 13 }),
               '刷新'
             ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'lit-btn lit-btn-ghost',
+                onClick: () => setImportCenterOpen(true),
+                title: '批量 PDF、手动元数据、DOI、RIS 或 EndNote',
+              },
+              h(Icon, { name: 'plus', size: 13 }),
+              '导入文献'
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                className: 'lit-btn lit-btn-ghost',
+                onClick: runPageTranslation,
+                disabled: translation.busy,
+                title: '使用 DSH 内置翻译翻译当前页面正文',
+              },
+              h(Icon, { name: 'sparkles', size: 13 }),
+              translation.busy ? '翻译中…' : '翻译本页'
+            ),
             dataSource === 'real'
               ? h(
                   'span',
                   { className: `lit-save-state lit-save-state-${realSaveState}` },
-                  realSaveState === 'saving' ? '保存中…' : realSaveState === 'error' ? '保存失败' : '已保存到 litd'
+                  realSaveState === 'saving' ? '保存中…' : realSaveState === 'error' ? '保存失败' : '已自动保存'
                 )
               : null,
-            h('span', { className: 'lit-dirty' }, dirtyCount > 0 ? `${dirtyCount} 条待复核` : '全部已更新'),
+            h(
+              'span',
+              { className: 'lit-dirty' },
+              dirtyCount > 0 ? `${dirtyCount} 条引文需重新定位` : '引文位置已同步'
+            ),
             h(
               'button',
               {
@@ -9054,10 +9720,10 @@ window.__ModuleLoader__.load({
                 className: 'lit-btn lit-btn-primary',
                 onClick: revalidateCitations,
                 disabled: revalidating || dataSource !== 'real' || citationCount === 0,
-                title: '按 quote 重新定位页码和 bbox',
+                title: '在 PDF 文本中重新查找每条引文的原文位置，并更新页码和 bbox',
               },
               h(Icon, { name: 'check', size: 14 }),
-              revalidating ? '校验中…' : '校验引用'
+              revalidating ? '重新定位中…' : '重新定位引文'
             ),
             h(
               'button',
@@ -9076,18 +9742,14 @@ window.__ModuleLoader__.load({
           tabButton('author', '作者检索', 0, 'book'),
           tabButton('graph', L('graph', '网络图'), state.graph.nodes.length, 'network')
         ),
-        h(
-          'div',
-          { className: dataSource === 'real' ? 'lit-demo-banner lit-real-banner' : 'lit-demo-banner' },
-          h(Icon, { name: 'info', size: 13 }),
-          h(
-            'span',
-            null,
-            dataSource === 'real'
-              ? '本地文献库：来自 litd / SQLite。'
-              : '未连接 litd：请确认本地服务已启动，再点右上角“刷新”；已加载内容会保留。'
-          )
-        ),
+        dataSource !== 'real'
+          ? h(
+              'div',
+              { className: 'lit-demo-banner' },
+              h(Icon, { name: 'info', size: 13 }),
+              h('span', null, '本地服务未连接。点击右上角“刷新”重试；已加载内容会保留。')
+            )
+          : null,
         h(
           'main',
           { className: 'lit-content' },
@@ -9233,6 +9895,7 @@ window.__ModuleLoader__.load({
               onRename: renameGroup,
               onRecolor: recolorGroup,
               onDelete: deleteGroup,
+              onMove: moveGroup,
             })
           : null,
         templateOpen && selectedPaperData
@@ -9261,6 +9924,41 @@ window.__ModuleLoader__.load({
                 setAttachTarget(metadataOnlyPaper);
                 setMetadataOnlyPaper(null);
                 setImportOpen(true);
+              },
+            })
+          : null,
+        importCenterOpen
+          ? h(ImportCenterModal, {
+              onClose: () => setImportCenterOpen(false),
+              onImported: (paper) => {
+                if (paper) applyRealPaper(paper);
+                loadRealLibrary(true);
+              },
+            })
+          : null,
+        translation.open
+          ? h(TranslationModal, {
+              busy: translation.busy,
+              text: translation.text,
+              error: translation.error,
+              onClose: () => setTranslation({ open: false, busy: false, text: '', error: '' }),
+              onRetry: runPageTranslation,
+            })
+          : null,
+        manualEvidence
+          ? h(ManualEvidenceModal, {
+              target: manualEvidence,
+              onClose: () => setManualEvidence(null),
+              onSave: ({ quote, page }) => {
+                patchEntry(
+                  manualEvidence.paperId,
+                  manualEvidence.sectionKey,
+                  manualEvidence.entryId,
+                  { quote, page, status: 'needs_recheck' },
+                  false
+                );
+                setManualEvidence(null);
+                setToast('已添加手动证据；可用“重新定位引文”校验位置');
               },
             })
           : null,
@@ -9321,6 +10019,36 @@ window.__ModuleLoader__.load({
                   h(Icon, { name: 'file', size: 13 }),
                   '打开详情'
                 ),
+                selectedPaperIds.length <= 1
+                  ? h(
+                      'div',
+                      { className: 'lit-context-move-row' },
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'lit-context-item',
+                          onClick: () => {
+                            movePaper(contextMenu.paperId, -1);
+                            setContextMenu(null);
+                          },
+                        },
+                        '↑ 上移一位'
+                      ),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          className: 'lit-context-item',
+                          onClick: () => {
+                            movePaper(contextMenu.paperId, 1);
+                            setContextMenu(null);
+                          },
+                        },
+                        '↓ 下移一位'
+                      )
+                    )
+                  : null,
                 h('div', { className: 'lit-context-label' }, '统一设置分组'),
                 (state.groups || GROUPS).map((group) => {
                   const allHave =
@@ -9375,7 +10103,7 @@ window.__ModuleLoader__.load({
                     onClick: requestDeleteSelected,
                   },
                   h(Icon, { name: 'trash', size: 13 }),
-                  '从演示库删除'
+                  '从文献库删除'
                 )
               )
             )
@@ -9469,6 +10197,31 @@ window.__ModuleLoader__.load({
       apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, I18N), 'lit-demo: locale');
         const t = ctx.locale.bind(NS);
+        const translatePage = async (text) => {
+          const remote = ctx.get?.('remote')?.cotTranslation || ctx.remote?.cotTranslation;
+          if (!remote) throw new Error('未找到 DSH 内置翻译服务');
+          const controller = new AbortController();
+          const limits = await remote.limits(controller.signal);
+          if (!limits?.ok) throw limits?.error || new Error('翻译服务不可用');
+          const { maxTextChars = 4000, preferences = {} } = limits.value || {};
+          const targetLanguage = preferences.targetLanguage && preferences.targetLanguage !== 'auto'
+            ? preferences.targetLanguage
+            : document.documentElement.lang || 'zh-CN';
+          const output = [];
+          for (let index = 0; index < text.length; index += maxTextChars) {
+            const result = await remote.translate(
+              {
+                text: text.slice(index, index + maxTextChars),
+                targetLanguage,
+                ...(preferences.provider ? { provider: preferences.provider } : {}),
+              },
+              controller.signal
+            );
+            if (!result?.ok) throw result?.error || new Error('翻译失败');
+            output.push(result.value);
+          }
+          return output.join('\n');
+        };
 
         ctx.slots.inject('main', () =>
           ctx.slots.register(
@@ -9476,7 +10229,7 @@ window.__ModuleLoader__.load({
               name: 'main',
               key: 'lit-demo',
               locale: NS,
-              inject: () => ({ t }),
+              inject: () => ({ t, translatePage }),
             },
             LitWorkspaceBoundary
           )

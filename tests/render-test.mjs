@@ -95,7 +95,7 @@ const checks = [
   ['title', '文献工作台'],
   ['paper', 'Geometric Inductive Bias'],
   ['claim', '主要发现'],
-  ['connection banner', '未连接 litd'],
+  ['connection banner', '本地服务未连接'],
   ['tabs', '追踪'],
 ];
 for (const [name, needle] of checks) {

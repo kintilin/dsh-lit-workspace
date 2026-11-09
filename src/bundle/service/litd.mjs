@@ -153,6 +153,23 @@ for (const column of [
   }
 }
 
+// User-defined ordering. Null sort_order means "not ordered yet": those rows
+// keep falling back to created_at so upgrading never reshuffles a library.
+function ensureSortOrderColumns() {
+  try {
+    db.exec('ALTER TABLE papers ADD COLUMN sort_order INTEGER');
+  } catch (error) {
+    // Existing databases already have the column.
+  }
+  try {
+    db.exec('ALTER TABLE groups ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
+  } catch (error) {
+    // Existing databases already have the column.
+  }
+}
+
+ensureSortOrderColumns();
+
 function seedGroups() {
   const count = db.prepare('SELECT COUNT(*) AS n FROM groups').get().n;
   if (count > 0) return;
@@ -229,15 +246,73 @@ function normalizeJournalName(value) {
     .trim();
 }
 
+// Loose key used only for alias / fuzzy candidate matching. It folds
+// punctuation, hyphens and "&" so e.g. "A-PHYSICAL SCIENCES" and
+// "a physical sciences" compare equal. Exact matching still uses
+// normalizeJournalName so existing behavior does not change.
+function journalMatchKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/['\u2018\u2019\u02bc`]/g, '')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const JCR_AMBIGUOUS = Symbol('jcr-ambiguous');
+
+// Curated aliases for journal names that scraped/Crossref metadata commonly
+// truncates. Keep this list conservative: every alias must point at exactly
+// one journal. The USA entry deliberately exists because "Proceedings of the
+// National Academy of Science(s)" is a valid prefix of both the PNAS USA
+// record (Q1) and the PNAS India section (Q3).
+const JCR_ALIAS_CANONICALS = new Map(
+  [
+    ['PNAS', 'Proceedings of the National Academy of Sciences of the United States of America'],
+    ['PNAS USA', 'Proceedings of the National Academy of Sciences of the United States of America'],
+    ['Proc. Natl. Acad. Sci.', 'Proceedings of the National Academy of Sciences of the United States of America'],
+    ['Proc Natl Acad Sci', 'Proceedings of the National Academy of Sciences of the United States of America'],
+    ['Proc Natl Acad Sci USA', 'Proceedings of the National Academy of Sciences of the United States of America'],
+    ['Proc Natl Acad Sci U S A', 'Proceedings of the National Academy of Sciences of the United States of America'],
+    [
+      'Proceedings of the National Academy of Science',
+      'Proceedings of the National Academy of Sciences of the United States of America',
+    ],
+    [
+      'Proceedings of the National Academy of Sciences',
+      'Proceedings of the National Academy of Sciences of the United States of America',
+    ],
+    [
+      'Proceedings of the National Academy of Sciences of the USA',
+      'Proceedings of the National Academy of Sciences of the United States of America',
+    ],
+    [
+      'Proceedings of the National Academy of Sciences of the United States',
+      'Proceedings of the National Academy of Sciences of the United States of America',
+    ],
+  ].map(([alias, canonical]) => [journalMatchKey(alias), canonical])
+);
+
 function impactFactorMap(year) {
-  if (!year) return new Map();
+  if (!year) return { byExact: new Map(), byLoose: new Map() };
   const rows = db.prepare('SELECT journal, value FROM impact_factors WHERE year = ?').all(Number(year));
-  return new Map(
-    rows.map((row) => [
-      normalizeJournalName(row.journal),
-      row.value === null || row.value === undefined ? null : Number(row.value),
-    ])
-  );
+  const byExact = new Map();
+  const byLoose = new Map();
+  for (const row of rows) {
+    const value = row.value === null || row.value === undefined ? null : Number(row.value);
+    byExact.set(normalizeJournalName(row.journal), value);
+    const loose = journalMatchKey(row.journal);
+    if (loose && !byLoose.has(loose)) byLoose.set(loose, value);
+  }
+  return { byExact, byLoose };
+}
+
+function lookupImpactFactor(map, name) {
+  const exact = map.byExact.get(normalizeJournalName(name));
+  if (exact !== undefined) return exact;
+  const loose = journalMatchKey(name);
+  return loose ? map.byLoose.get(loose) : undefined;
 }
 
 function filterByImpactFactor(results, minIf, year) {
@@ -246,11 +321,10 @@ function filterByImpactFactor(results, minIf, year) {
   if (!Number.isFinite(min)) return results;
   const requestedYear = year || new Date().getFullYear() - 1;
   const map = impactFactorMap(requestedYear);
-  const jcr = Number(requestedYear) === 2025 || Number(requestedYear) === 2026 ? jcrMaps(2026) : null;
+  const useJcrFallback = Number(requestedYear) === 2025 || Number(requestedYear) === 2026;
   return results.filter((item) => {
-    const normalized = normalizeJournalName(item.journal || item.venue);
-    const local = map.get(normalized);
-    const fallback = jcr?.byJournal.get(normalized)?.impact_factor;
+    const local = lookupImpactFactor(map, item.journal || item.venue);
+    const fallback = useJcrFallback ? jcrLookup(item, 2026)?.impact_factor : undefined;
     const value = local !== undefined && local !== null ? local : fallback;
     return value !== undefined && value !== null && Number(value) >= min;
   });
@@ -260,7 +334,27 @@ function normalizeIssn(value) {
   return String(value || '').toUpperCase().replace(/[^0-9X]/g, '');
 }
 
-let jcrCache = { year: null, byJournal: new Map(), byIssn: new Map() };
+let jcrCache = {
+  year: null,
+  rows: [],
+  byJournal: new Map(),
+  byIssn: new Map(),
+  byName: new Map(),
+  byMatchKey: new Map(),
+  prefixBuckets: new Map(),
+};
+let jcrNameCache = new Map();
+
+function invalidateJcrCache() {
+  jcrCache.year = null;
+  jcrNameCache = new Map();
+}
+
+const JCR_PREFIX_MIN_TOKENS = 3;
+const JCR_PREFIX_MIN_CHARS = 12;
+// A truncated query usually only drops trailing words. Anything that adds
+// more than this many extra words is treated as a different journal.
+const JCR_PREFIX_MAX_EXTRA_TOKENS = 8;
 
 function jcrMaps(year = 2026) {
   if (jcrCache.year === Number(year)) return jcrCache;
@@ -269,37 +363,134 @@ function jcrMaps(year = 2026) {
     .all(Number(year));
   const byJournal = new Map();
   const byIssn = new Map();
+  const byName = new Map();
+  const byMatchKey = new Map();
+  const prefixBuckets = new Map();
+  const addUnique = (map, key, row) => {
+    if (!key) return;
+    const present = map.get(key);
+    if (present === undefined) map.set(key, row);
+    else if (present !== row) map.set(key, JCR_AMBIGUOUS);
+  };
   for (const row of rows) {
+    // Raw journal_norm keeps the historical exact-key behavior.
     byJournal.set(row.journal_norm, row);
+    addUnique(byName, normalizeJournalName(row.journal), row);
+    addUnique(byMatchKey, journalMatchKey(row.journal_norm), row);
+    addUnique(byMatchKey, journalMatchKey(row.journal), row);
     for (const value of [row.issn, row.eissn]) {
       const key = normalizeIssn(value);
       if (key) byIssn.set(key, row);
     }
+    const tokens = journalMatchKey(row.journal || row.journal_norm).split(' ').filter(Boolean);
+    if (tokens.length) {
+      const bucketKey = tokens[0].length >= 4 ? tokens[0].slice(0, 4) : tokens[0];
+      const bucket = prefixBuckets.get(bucketKey) || [];
+      bucket.push({ row, tokens });
+      prefixBuckets.set(bucketKey, bucket);
+    }
   }
-  jcrCache = { year: Number(year), byJournal, byIssn };
+  jcrCache = {
+    year: Number(year),
+    rows,
+    byJournal,
+    byIssn,
+    byName,
+    byMatchKey,
+    prefixBuckets,
+  };
+  jcrNameCache = new Map();
   return jcrCache;
 }
 
-function jcrForResult(item) {
-  const maps = jcrMaps(2026);
+function jcrAliasRow(maps, name) {
+  const canonical = JCR_ALIAS_CANONICALS.get(journalMatchKey(name));
+  if (!canonical) return null;
+  const normalized = normalizeJournalName(canonical);
+  const row =
+    maps.byJournal.get(normalized) ||
+    maps.byName.get(normalized) ||
+    maps.byMatchKey.get(journalMatchKey(canonical));
+  return row && row !== JCR_AMBIGUOUS ? row : null;
+}
+
+function tokenMatchesPrefix(candidateToken, queryToken) {
+  if (candidateToken === queryToken) return true;
+  // Allow clipped/plural endings ("science" vs "sciences") only for
+  // meaningful words, so short tokens stay strict.
+  return queryToken.length >= 4 && candidateToken.startsWith(queryToken);
+}
+
+function jcrPrefixLookup(maps, name) {
+  const key = journalMatchKey(name);
+  if (!key || key.length < JCR_PREFIX_MIN_CHARS) return null;
+  const queryTokens = key.split(' ').filter(Boolean);
+  if (queryTokens.length < JCR_PREFIX_MIN_TOKENS) return null;
+  const bucketKey = queryTokens[0].length >= 4 ? queryTokens[0].slice(0, 4) : queryTokens[0];
+  const bucket = maps.prefixBuckets.get(bucketKey) || [];
+  const candidates = [];
+  for (const candidate of bucket) {
+    if (candidate.tokens.length < queryTokens.length) continue;
+    let matched = true;
+    for (let i = 0; i < queryTokens.length; i += 1) {
+      if (!tokenMatchesPrefix(candidate.tokens[i], queryTokens[i])) {
+        matched = false;
+        break;
+      }
+    }
+    if (!matched) continue;
+    if (candidate.tokens.length - queryTokens.length > JCR_PREFIX_MAX_EXTRA_TOKENS) continue;
+    candidates.push(candidate.row);
+  }
+  // A truncated name that still matches more than one journal (different
+  // section/country variants) is ambiguous: refuse to guess instead of
+  // silently picking the first row. Ambiguous cases need an alias above.
+  if (candidates.length !== 1) return null;
+  return candidates[0];
+}
+
+function jcrLookupByName(maps, name) {
+  const normalized = normalizeJournalName(name);
+  const exact = maps.byJournal.get(normalized);
+  if (exact) return exact;
+  const alias = jcrAliasRow(maps, name);
+  if (alias) return alias;
+  const byName = maps.byName.get(normalized);
+  if (byName && byName !== JCR_AMBIGUOUS) return byName;
+  const matchKey = journalMatchKey(name);
+  const byKey = matchKey ? maps.byMatchKey.get(matchKey) : undefined;
+  if (byKey && byKey !== JCR_AMBIGUOUS) return byKey;
+  return jcrPrefixLookup(maps, name);
+}
+
+function jcrLookup(item, year = 2026) {
+  if (!item) return null;
+  const maps = jcrMaps(year);
+  if (maps.byJournal.size === 0) return null;
   const issn = normalizeIssn(item.issn || '');
   if (issn) {
     const byIssn = maps.byIssn.get(issn);
     if (byIssn) return byIssn;
   }
-  return maps.byJournal.get(normalizeJournalName(item.journal || item.venue)) || null;
+  const name = String(item.journal || item.venue || '').trim();
+  if (!name) return null;
+  const cacheKey = `${normalizeJournalName(name)}|${journalMatchKey(name)}`;
+  if (jcrNameCache.has(cacheKey)) return jcrNameCache.get(cacheKey);
+  const row = jcrLookupByName(maps, name);
+  if (jcrNameCache.size > 4000) jcrNameCache.clear();
+  jcrNameCache.set(cacheKey, row);
+  return row;
+}
+
+function jcrForResult(item) {
+  return jcrLookup(item, 2026);
 }
 
 function filterByJcr(results, quartile, year) {
   if (!quartile) return results;
   const maps = jcrMaps(year || 2026);
   if (maps.byJournal.size === 0) return [];
-  return results.filter((item) => {
-    const issn = normalizeIssn(item.issn || '');
-    const byIssn = issn ? maps.byIssn.get(issn) : null;
-    if (byIssn) return byIssn.quartile === quartile;
-    return maps.byJournal.get(normalizeJournalName(item.journal || item.venue))?.quartile === quartile;
-  });
+  return results.filter((item) => jcrLookup(item, year || 2026)?.quartile === quartile);
 }
 
 function seedJcrFromFile() {
@@ -330,7 +521,7 @@ function seedJcrFromFile() {
     db.exec('ROLLBACK');
     throw error;
   }
-  jcrCache = { year: null, byJournal: new Map(), byIssn: new Map() };
+  invalidateJcrCache();
   console.log(`[litd] imported ${payload.journals?.length || 0} JCR journals for ${year}`);
 }
 
@@ -1551,7 +1742,9 @@ function importPaperMetadata(payload) {
   const title = String(payload.title || '').trim();
   if (!title) throw new Error('title required');
   const existing = db.prepare('SELECT id FROM papers WHERE lower(title) = lower(?)').get(title);
-  const id = existing?.id || `paper-${Date.now()}`;
+  // Batch imports can create several papers within the same millisecond, so
+  // the id needs a random suffix to stay unique.
+  const id = existing?.id || `paper-${Date.now()}-${randomUUID().slice(0, 8)}`;
   const summary = normalizeSummary(null);
   const abstract = String(payload.abstract || '').trim();
   const sourceUrl = String(payload.source_url || '').trim();
@@ -1586,6 +1779,200 @@ function importPaperMetadata(payload) {
   );
   indexPaper({ id, title, authors: String(payload.authors || ''), abstract, pages: [] });
   return serializePaper(db.prepare('SELECT * FROM papers WHERE id = ?').get(id));
+}
+
+function normalizeDoiValue(value) {
+  return String(value || '')
+    .replace(/^\s*doi:\s*/i, '')
+    .replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '')
+    .trim()
+    .toLowerCase();
+}
+
+function bibliographyYear(value) {
+  const match = String(value || '').match(/\b(1[5-9]\d{2}|2\d{3})\b/);
+  return match ? Number(match[1]) : null;
+}
+
+function joinBibliographyAuthors(values) {
+  return values
+    .map((value) => String(value || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
+// Both parsers keep the raw tag stream and share one field mapper:
+// RIS: TI/T1 title, AU authors, PY year, JO/JF venue, DO doi, AB abstract, UR url
+// EndNote: %T title, %A authors, %D year, %J venue, %R doi, %X abstract, %U url
+function bibliographyRecordFromFields(type, fields) {
+  const values = (tags) =>
+    fields
+      .filter(([tag]) => tags.includes(tag))
+      .map(([, value]) => String(value || '').trim())
+      .filter(Boolean);
+  return {
+    type: String(type || '').trim(),
+    title: values(['TI', 'T1', 'T'])[0] || '',
+    authors: joinBibliographyAuthors(values(['AU', 'A'])),
+    year: bibliographyYear(values(['PY', 'Y1', 'D'])[0]),
+    venue: values(['JO', 'JF', 'J'])[0] || '',
+    doi: normalizeDoiValue(values(['DO', 'R'])[0]),
+    abstract: values(['AB', 'X'])[0] || '',
+    source_url: values(['UR', 'U'])[0] || '',
+  };
+}
+
+function parseRisRecords(text) {
+  const lines = String(text || '')
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n');
+  const records = [];
+  let current = null;
+  let lastField = null;
+  const finish = () => {
+    if (current && current.fields.length > 0) records.push(current);
+    current = null;
+    lastField = null;
+  };
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    if (!line.trim()) continue;
+    const match = line.match(/^([A-Z][A-Z0-9]) {1,2}- ?(.*)$/);
+    if (!match) {
+      // Wrapped value lines continue the previous tag.
+      if (current && lastField) lastField[1] = `${lastField[1]} ${line.trim()}`.trim();
+      continue;
+    }
+    const tag = match[1];
+    const value = match[2].trim();
+    if (tag === 'TY') {
+      finish();
+      current = { type: value, fields: [] };
+      lastField = null;
+      continue;
+    }
+    if (!current) continue;
+    if (tag === 'ER') {
+      finish();
+      continue;
+    }
+    lastField = [tag, value];
+    current.fields.push(lastField);
+  }
+  finish();
+  return records.map((record) => bibliographyRecordFromFields(record.type, record.fields));
+}
+
+function parseEndNoteRecords(text) {
+  const lines = String(text || '')
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n');
+  const records = [];
+  let current = null;
+  let lastField = null;
+  const finish = () => {
+    if (current && current.fields.length) records.push(current);
+    current = null;
+    lastField = null;
+  };
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    if (!line.trim()) {
+      finish();
+      continue;
+    }
+    const match = line.match(/^%(\S)\s?(.*)$/);
+    if (!match) {
+      if (current && lastField) lastField[1] = `${lastField[1]} ${line.trim()}`.trim();
+      continue;
+    }
+    const tag = match[1];
+    const value = match[2].trim();
+    if (tag === '0') {
+      finish();
+      current = { type: value, fields: [] };
+      lastField = null;
+      continue;
+    }
+    if (!current) current = { type: '', fields: [] };
+    lastField = [tag, value];
+    current.fields.push(lastField);
+  }
+  finish();
+  return records.map((record) => bibliographyRecordFromFields(record.type, record.fields));
+}
+
+function parseBibliographyText(text, format) {
+  const normalizedFormat = String(format || '').toLowerCase();
+  if (normalizedFormat === 'ris') return parseRisRecords(text);
+  if (normalizedFormat === 'endnote' || normalizedFormat === 'enw' || normalizedFormat === 'nbib') {
+    return parseEndNoteRecords(text);
+  }
+  throw new Error('unsupported format (expected ris or endnote)');
+}
+
+function importBibliography(text, format) {
+  const records = parseBibliographyText(text, format);
+  if (records.length === 0) throw new Error('no bibliography records found');
+  const existingDois = new Set();
+  const existingTitles = new Set();
+  for (const row of db.prepare('SELECT title, doi FROM papers').all()) {
+    const doi = normalizeDoiValue(row.doi);
+    if (doi) existingDois.add(doi);
+    const titleKey = compareTitle(row.title);
+    if (titleKey) existingTitles.add(titleKey);
+  }
+  const imported = [];
+  const skippedRecords = [];
+  const errors = [];
+  records.forEach((record, index) => {
+    const title = String(record.title || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!title) {
+      errors.push({ index, error: 'title missing', doi: record.doi || '' });
+      return;
+    }
+    const doi = normalizeDoiValue(record.doi);
+    const titleKey = compareTitle(title);
+    const duplicateReason =
+      doi && existingDois.has(doi)
+        ? 'duplicate doi'
+        : titleKey && existingTitles.has(titleKey)
+          ? 'duplicate title'
+          : '';
+    if (duplicateReason) {
+      skippedRecords.push({ index, title, doi, reason: duplicateReason });
+      return;
+    }
+    try {
+      const paper = importPaperMetadata({
+        title,
+        authors: record.authors,
+        year: record.year,
+        venue: record.venue,
+        doi: doi || record.doi,
+        abstract: record.abstract,
+        source_url: record.source_url,
+      });
+      imported.push(paper);
+      if (doi) existingDois.add(doi);
+      if (titleKey) existingTitles.add(titleKey);
+    } catch (error) {
+      errors.push({ index, title, doi, error: error.message });
+    }
+  });
+  return {
+    format: String(format || '').toLowerCase(),
+    parsed: records.length,
+    imported: imported.length,
+    skipped: skippedRecords.length,
+    skipped_records: skippedRecords,
+    errors,
+    papers: imported,
+  };
 }
 
 const GRAPH_STOPWORDS = new Set(
@@ -2147,6 +2534,7 @@ function serializePaper(row) {
     page_count: row.page_count,
     pdf_path: row.pdf_path || '',
     source_url: row.source_url || '',
+    sort_order: row.sort_order ?? null,
     impact_factor: metrics?.impact_factor ?? null,
     jcr_quartile: metrics?.quartile || null,
     groups: JSON.parse(row.groups_json || '[]'),
@@ -2171,7 +2559,15 @@ function serializePaper(row) {
 }
 
 function listLibrary() {
-  const papers = db.prepare('SELECT * FROM papers ORDER BY created_at DESC').all().map(serializePaper);
+  // Papers with a user-defined sort_order come first in that order. Papers
+  // that have never been ordered (including new imports) keep the previous
+  // newest-first behavior via created_at, so upgrading never reshuffles.
+  const papers = db
+    .prepare(
+      'SELECT * FROM papers ORDER BY CASE WHEN sort_order IS NULL THEN 0 ELSE 1 END, sort_order ASC, created_at DESC'
+    )
+    .all()
+    .map(serializePaper);
   const groups = db.prepare('SELECT * FROM groups ORDER BY sort_order, name').all();
   return { source: 'litd', papers, groups };
 }
@@ -2324,7 +2720,8 @@ async function restoreFromArchive(buffer) {
 
     db = new DatabaseSync(path.join(dataDir, 'library.db'));
     db.exec('PRAGMA journal_mode = WAL');
-    jcrCache = { year: null, byJournal: new Map(), byIssn: new Map() };
+    ensureSortOrderColumns();
+    invalidateJcrCache();
     syncTagLibrary();
     closed = false;
     return {
@@ -2691,12 +3088,15 @@ async function aiSearch(query, requestedSources, page = 1, excludeExisting = fal
   };
 }
 
-function readBody(req) {
+function readBody(req, maxBytes = 2_000_000) {
   return new Promise((resolve, reject) => {
     let body = '';
     req.on('data', (chunk) => {
       body += chunk;
-      if (body.length > 2_000_000) reject(new Error('body too large'));
+      if (body.length > maxBytes) {
+        req.destroy();
+        reject(new Error('body too large'));
+      }
     });
     req.on('end', () => {
       try {
@@ -2959,6 +3359,33 @@ const server = http.createServer(async (req, res) => {
         }
       }
       return send(res, 200, { ok: true, updated, errors, papers: listLibrary().papers });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/papers/lookup-doi') {
+      const body = await readBody(req);
+      const doi = normalizeDoiValue(body.doi);
+      if (!doi || !/^10\.\d{4,9}\/\S+$/.test(doi)) {
+        return send(res, 400, { ok: false, error: 'invalid doi' });
+      }
+      try {
+        const metadata = await crossrefMetadata(doi);
+        if (!metadata?.title && !metadata?.venue) {
+          return send(res, 404, { ok: false, error: 'doi not found' });
+        }
+        return send(res, 200, {
+          ok: true,
+          metadata: {
+            title: String(metadata.title || '').trim(),
+            authors: String(metadata.authors || '').trim(),
+            year: metadata.year || null,
+            venue: String(metadata.venue || '').trim(),
+            doi: normalizeDoiValue(metadata.doi) || doi,
+            abstract: String(metadata.abstract || '').trim(),
+          },
+        });
+      } catch (error) {
+        if (/HTTP 404/.test(error.message)) return send(res, 404, { ok: false, error: 'doi not found' });
+        return send(res, 502, { ok: false, error: error.message });
+      }
     }
     if (req.method === 'GET' && url.pathname === '/api/tags') {
       return send(res, 200, { ok: true, tags: getTagLibrary() });
@@ -3477,6 +3904,32 @@ const server = http.createServer(async (req, res) => {
       const groups = db.prepare('SELECT * FROM groups ORDER BY sort_order, name').all();
       return send(res, 200, { ok: true, groups });
     }
+    if (req.method === 'POST' && url.pathname === '/api/groups/reorder') {
+      const body = await readBody(req);
+      const requested = Array.isArray(body.ids) ? body.ids.map(String).filter(Boolean) : [];
+      if (!requested.length) return send(res, 400, { ok: false, error: 'ids required' });
+      const requestedIds = [...new Set(requested)];
+      const currentIds = db
+        .prepare('SELECT id FROM groups ORDER BY sort_order, name')
+        .all()
+        .map((row) => row.id);
+      const known = new Set(currentIds);
+      const order = requestedIds.filter((id) => known.has(id));
+      const missing = requestedIds.filter((id) => !known.has(id));
+      const placed = new Set(order);
+      for (const id of currentIds) if (!placed.has(id)) order.push(id);
+      const update = db.prepare('UPDATE groups SET sort_order = ? WHERE id = ?');
+      db.exec('BEGIN');
+      try {
+        order.forEach((id, index) => update.run(index, id));
+        db.exec('COMMIT');
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
+      const groups = db.prepare('SELECT * FROM groups ORDER BY sort_order, name').all();
+      return send(res, 200, { ok: true, updated: order.length, missing, groups });
+    }
     if (req.method === 'POST' && url.pathname === '/api/groups') {
       const body = await readBody(req);
       const name = String(body.name || '').trim();
@@ -3513,6 +3966,39 @@ const server = http.createServer(async (req, res) => {
       }
       db.prepare('DELETE FROM groups WHERE id = ?').run(id);
       return send(res, 200, { ok: true, deleted: id, affected_papers: affected });
+    }
+    if (req.method === 'POST' && url.pathname === '/api/papers/reorder') {
+      const body = await readBody(req);
+      const requested = Array.isArray(body.ids) ? body.ids.map(String).filter(Boolean) : [];
+      if (!requested.length) return send(res, 400, { ok: false, error: 'ids required' });
+      const requestedIds = [...new Set(requested)];
+      const currentIds = db
+        .prepare(
+          'SELECT id FROM papers ORDER BY CASE WHEN sort_order IS NULL THEN 0 ELSE 1 END, sort_order ASC, created_at DESC'
+        )
+        .all()
+        .map((row) => row.id);
+      const known = new Set(currentIds);
+      const order = requestedIds.filter((id) => known.has(id));
+      const missing = requestedIds.filter((id) => !known.has(id));
+      const placed = new Set(order);
+      for (const id of currentIds) if (!placed.has(id)) order.push(id);
+      const update = db.prepare('UPDATE papers SET sort_order = ? WHERE id = ?');
+      db.exec('BEGIN');
+      try {
+        order.forEach((id, index) => update.run(index, id));
+        db.exec('COMMIT');
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
+      return send(res, 200, {
+        ok: true,
+        updated: order.length,
+        missing,
+        order,
+        papers: listLibrary().papers,
+      });
     }
     if (req.method === 'GET' && url.pathname.startsWith('/api/papers/') && url.pathname.endsWith('/pages')) {
       const id = decodeURIComponent(url.pathname.split('/')[3]);
@@ -3629,7 +4115,12 @@ const server = http.createServer(async (req, res) => {
         filenameHint: path.basename(body.path, path.extname(body.path)),
         autoSummary: body.auto_summary === true,
       });
-      return send(res, 200, { ok: true, paper, duplicate: beforeIds.has(paper.id) });
+      return send(res, 200, {
+        ok: true,
+        paper,
+        duplicate: beforeIds.has(paper.id),
+        needs_metadata_review: !paper.doi && (paper.venue === 'Imported PDF' || paper.authors === 'Unknown'),
+      });
     }
     if (req.method === 'POST' && url.pathname === '/api/import-upload') {
       const filename = url.searchParams.get('filename') || 'upload.pdf';
@@ -3648,13 +4139,28 @@ const server = http.createServer(async (req, res) => {
           filenameHint: path.basename(filename, path.extname(filename)),
           autoSummary: url.searchParams.get('auto_summary') === '1',
         });
-        return send(res, 200, { ok: true, paper, duplicate: beforeIds.has(paper.id) });
+        return send(res, 200, {
+        ok: true,
+        paper,
+        duplicate: beforeIds.has(paper.id),
+        needs_metadata_review: !paper.doi && (paper.venue === 'Imported PDF' || paper.authors === 'Unknown'),
+      });
       } finally {
         try {
           fs.unlinkSync(tempPath);
         } catch (error) {
           // The library copy is what matters; a leftover temp file is harmless.
         }
+      }
+    }
+    if (req.method === 'POST' && url.pathname === '/api/import/bibliography') {
+      // Bibliography exports can be larger than the default JSON body cap.
+      const body = await readBody(req, 10 * 1024 * 1024);
+      try {
+        const result = importBibliography(String(body.text || ''), String(body.format || ''));
+        return send(res, 200, { ok: true, ...result });
+      } catch (error) {
+        return send(res, 400, { ok: false, error: error.message });
       }
     }
     if (req.method === 'POST' && url.pathname === '/api/papers/delete') {
