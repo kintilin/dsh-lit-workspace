@@ -1,4 +1,4 @@
-# dsh-lit 0.7.4 试用包
+# dsh-lit 0.9.0 试用包
 
 这是 DSH 文献工作台的完整安装包，包含：
 
@@ -21,17 +21,17 @@
 2. 在 DSH 里让 Agent 执行：
 
 ```text
-plugin_manager install_bundle <本目录绝对路径>\dsh-lit-0.7.4.tgz
+plugin_manager install_bundle <本目录绝对路径>\dsh-lit-0.9.0.tgz
 ```
 
 例如：
 
 ```text
-plugin_manager install_bundle C:\Users\you\Downloads\dsh-lit-release\dsh-lit-0.7.4.tgz
+plugin_manager install_bundle C:\Users\you\Downloads\dsh-lit-release\dsh-lit-0.9.0.tgz
 ```
 
 如果使用 DSH 插件管理界面，选择本地安装并指向
-`dsh-lit-0.7.4.tgz`。
+`dsh-lit-0.9.0.tgz`。
 
 3. 安装完成后完整退出并重新打开 DSH。
 4. 打开“文献工作台”。
