@@ -5331,6 +5331,45 @@ window.__ModuleLoader__.load({
       .lit-theme-light .lit-ai-stars { color: #8a6500; }
       .lit-theme-light .lit-ai-score-reason { color: #68520a; }
       .lit-theme-light .lit-ai-score-why { color: #5f594d; }
+      .lit-theme-light .lit-if-tag {
+        color: #05603a;
+        background: #e6f7ee;
+        border-color: #9bd6b8;
+        font-weight: 700;
+      }
+      .lit-theme-light .lit-if-tag.lit-if-missing {
+        color: #4b5563;
+        background: #eef1f4;
+        border-color: #cbd2da;
+        font-weight: 600;
+      }
+      .lit-theme-light .lit-journal-badge {
+        color: #1e4f9c;
+        background: #eaf2ff;
+        border-color: #b9cff2;
+      }
+      .lit-theme-light .lit-journal-badge.lit-journal-q1 {
+        color: #7a5200;
+        background: #fff5db;
+        border-color: #e7c66a;
+      }
+      .lit-theme-light .lit-journal-badge.lit-journal-q2 {
+        color: #1e4f9c;
+        background: #eaf2ff;
+        border-color: #b9cff2;
+      }
+      .lit-theme-light .lit-journal-badge.lit-journal-q3 {
+        color: #086343;
+        background: #e8f7f0;
+        border-color: #a9d8c0;
+      }
+      .lit-theme-light .lit-journal-badge.lit-journal-q4 {
+        color: #4b5563;
+        background: #eef1f4;
+        border-color: #cbd2da;
+      }
+      .lit-theme-light .lit-journal-quartile { opacity: 1; }
+      .lit-theme-light .lit-if-value { color: #1e4f9c; font-weight: 650; }
       .lit-theme-light .lit-warn-line { color: #72540b; background: rgba(245,196,81,.10); }
       .lit-theme-light :is(.lit-input, .lit-textarea, .lit-select, .lit-search-input) {
         background: var(--dsw-alias-bg-base, #fff);
