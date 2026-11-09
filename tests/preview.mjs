@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -20,7 +21,7 @@ global.IS_REACT_ACT_ENVIRONMENT = true;
 window.IS_REACT_ACT_ENVIRONMENT = true;
 window.isSecureContext = true;
 
-const source = fs.readFileSync('E:/DSH_Workspace/lit-demo/client.js', 'utf8');
+const source = fs.readFileSync(fileURLToPath(new URL('../src/client/client.js', import.meta.url)), 'utf8');
 let pluginFactory = null;
 window.__ModuleLoader__ = {
   load(entry) {
@@ -70,7 +71,7 @@ await act(async () => {
 
 function writePreview(name) {
   const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${name}</title><style>html,body{margin:0;width:100%;height:100%;background:#111820}#app{width:100%;height:100vh}</style></head><body><div id="app">${container.innerHTML}</div></body></html>`;
-  fs.writeFileSync(`E:/DSH_Workspace/lit-demo-test/${name}.html`, html);
+  fs.writeFileSync(new URL(`./${name}.html`, import.meta.url), html);
 }
 
 writePreview('preview-library');

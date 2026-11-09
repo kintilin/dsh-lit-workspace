@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
@@ -22,7 +23,7 @@ window.isSecureContext = true;
 window.__DSH_LIT_CONFIG__ = { apiBase: 'http://127.0.0.1:8765' };
 window.fetch = (...args) => globalThis.fetch(...args);
 
-const source = fs.readFileSync('E:/DSH_Workspace/lit-demo/client.js', 'utf8');
+const source = fs.readFileSync(fileURLToPath(new URL('../src/client/client.js', import.meta.url)), 'utf8');
 let pluginFactory = null;
 window.__ModuleLoader__ = { load(entry) { pluginFactory = entry.factory; } };
 window.eval(source);

@@ -1,9 +1,10 @@
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-const source = fs.readFileSync('E:/DSH_Workspace/lit-demo/client.js', 'utf8');
+const source = fs.readFileSync(fileURLToPath(new URL('../src/client/client.js', import.meta.url)), 'utf8');
 let pluginFactory = null;
 
 const storage = new Map();
