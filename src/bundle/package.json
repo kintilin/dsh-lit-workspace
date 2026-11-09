@@ -1,0 +1,53 @@
+{
+  "name": "dsh-lit",
+  "version": "0.7.4",
+  "private": false,
+  "license": "MIT",
+  "type": "module",
+  "description": "Literature workspace for DeepSeek Harness: local library, PDFs, AI summaries, RSS tracking and semantic groups.",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "literature",
+    "pdf",
+    "rss",
+    "research"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "LICENSE",
+    "service/litd.mjs",
+    "service/package.json",
+    "README.md"
+  ],
+  "dependencies": {
+    "fast-xml-parser": "^5.11.2",
+    "pdfjs-dist": "4.10.38"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-theme"
+      ]
+    }
+  }
+}

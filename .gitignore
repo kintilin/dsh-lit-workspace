@@ -1,0 +1,31 @@
+node_modules/
+**/node_modules/
+
+# User data
+lit-data/
+src/service/data/
+src/bundle/data/
+src/bundle/service/data/
+
+# Build artifacts
+dist/
+release/
+*.tgz
+*.zip
+*.db
+*.db-shm
+*.db-wal
+*.pdf
+*.log
+
+# Generated test artifacts
+tests/preview-*.html
+tests/*.png
+tests/*.jpg
+tests/*.jpeg
+tests/*.webp
+
+# Local files
+*.local
+.DS_Store
+Thumbs.db

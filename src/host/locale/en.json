@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Literature Model Summary",
+    "description": "Adds a local host route that turns a paper into a structured model summary."
+  }
+}

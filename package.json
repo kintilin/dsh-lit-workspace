@@ -1,0 +1,11 @@
+{
+  "name": "dsh-lit-workspace",
+  "version": "0.7.4",
+  "private": true,
+  "description": "Source workspace for the dsh-lit DSH plugin",
+  "scripts": {
+    "pack": "pnpm --dir src/bundle pack",
+    "test": "node tests/real-test.mjs"
+  },
+  "license": "MIT"
+}

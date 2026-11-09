@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head>
+    <title>Science News</title>
+  </head>
+  <body>
+    <outline text="科学新闻" title="科学新闻">
+      <outline type="rss" text="Science News" title="Science News" xmlUrl="https://www.science.org/rss/news_current.xml" htmlUrl="https://www.science.org/news"/>
+      <outline type="rss" text="ScienceDaily" title="ScienceDaily" xmlUrl="https://www.sciencedaily.com/rss/top/science.xml" htmlUrl="https://www.sciencedaily.com/news/"/>
+      <outline type="rss" text="Phys.org" title="Phys.org" xmlUrl="https://phys.org/rss-feed/" htmlUrl="https://phys.org/"/>
+      <outline type="rss" text="Nature 最新文章" title="Nature 最新文章" xmlUrl="https://www.nature.com/nature.rss" htmlUrl="https://www.nature.com/nature/"/>
+      <outline type="rss" text="Anthropic Research（第三方镜像）" title="Anthropic Research（第三方镜像）" xmlUrl="https://cdn.jsdelivr.net/gh/Olshansk/rss-feeds@main/feeds/feed_anthropic_research.xml" htmlUrl="https://www.anthropic.com/research"/>
+    </outline>
+  </body>
+</opml>

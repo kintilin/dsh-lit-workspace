@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Literature workspace">
+  <rect width="64" height="64" rx="15" fill="#12293e"/>
+  <path d="M15 17.5c0-3 2.4-5.5 5.4-5.5H49v39H20.4c-3 0-5.4 2.4-5.4 5.5z" fill="#1e4464" stroke="#82b8e8" stroke-width="2.6" stroke-linejoin="round"/>
+  <path d="M20.4 12.5H49v34.9H20.4c-2 0-3.9.7-5.4 1.9V17.5c0-2.8 2.4-5 5.4-5z" fill="none" stroke="#cfe7ff" stroke-width="2.2"/>
+  <circle cx="29" cy="27" r="3.2" fill="#8ed0ff"/>
+  <circle cx="42" cy="22" r="3.2" fill="#ffd166"/>
+  <circle cx="42" cy="37" r="3.2" fill="#7ee0b8"/>
+  <path d="M31.7 25.6 39.3 23M31.7 28.5l7.6 6.6M42 25.2v8.6" fill="none" stroke="#dff1ff" stroke-width="1.8" stroke-linecap="round"/>
+</svg>

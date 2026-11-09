@@ -1,0 +1,1 @@
+{"name":"lit-demo-test","private":true,"version":"1.0.0","type":"module","dependencies":{"jsdom":"^26.1.0","pdfjs-dist":"4.10.38","react":"18.3.1","react-dom":"18.3.1"}}

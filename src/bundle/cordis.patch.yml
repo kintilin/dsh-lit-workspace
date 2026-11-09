@@ -1,0 +1,4 @@
+- insert:
+    - id: dsh-lit
+      name: 'dsh-lit'
+      config: {}
