@@ -1,6 +1,6 @@
 {
   "name": "dsh-lit-workspace",
-  "version": "0.8.3",
+  "version": "0.8.5",
   "private": true,
   "description": "Source workspace for the dsh-lit DSH plugin",
   "scripts": {

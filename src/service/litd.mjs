@@ -1201,6 +1201,13 @@ function feedDoiFromLink(link) {
   return '';
 }
 
+function cleanCrossrefText(value) {
+  return String(value || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 async function crossrefMetadata(doi) {
   if (!doi) return {};
   const response = await fetch(`https://api.crossref.org/works/${encodeURIComponent(doi)}`, {
@@ -1221,10 +1228,10 @@ async function crossrefMetadata(doi) {
     .replace(/\s+/g, ' ')
     .trim();
   return {
-    title: Array.isArray(message.title) ? message.title[0] : message.title,
-    authors,
+    title: cleanCrossrefText(Array.isArray(message.title) ? message.title[0] : message.title),
+    authors: cleanCrossrefText(authors),
     year,
-    venue: Array.isArray(message['container-title']) ? message['container-title'][0] : message['container-title'],
+    venue: cleanCrossrefText(Array.isArray(message['container-title']) ? message['container-title'][0] : message['container-title']),
     doi,
     abstract,
   };
@@ -1237,15 +1244,12 @@ function crossrefMessageMetadata(message, fallbackDoi) {
     .join(', ');
   const date = message['published-print'] || message['published-online'] || message.published || {};
   return {
-    title: Array.isArray(message.title) ? message.title[0] : message.title,
-    authors,
+    title: cleanCrossrefText(Array.isArray(message.title) ? message.title[0] : message.title),
+    authors: cleanCrossrefText(authors),
     year: date['date-parts']?.[0]?.[0] || null,
-    venue: Array.isArray(message['container-title']) ? message['container-title'][0] : message['container-title'],
+    venue: cleanCrossrefText(Array.isArray(message['container-title']) ? message['container-title'][0] : message['container-title']),
     doi: message.DOI || fallbackDoi,
-    abstract: String(message.abstract || '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim(),
+    abstract: cleanCrossrefText(message.abstract),
   };
 }
 
@@ -1280,7 +1284,20 @@ async function enrichPaperBibliographic(row) {
   if (row.doi) {
     metadata = await crossrefMetadata(row.doi);
   } else if (row.title) {
-    metadata = await crossrefByTitle(row.title);
+    try {
+      metadata = await crossrefByTitle(row.title);
+    } catch (error) {
+      metadata = null;
+    }
+    if (!metadata && row.pdf_path && fs.existsSync(row.pdf_path)) {
+      try {
+        const pages = JSON.parse(row.pages_json || '[]');
+        const guessed = guessPdfTitle(pages[0]?.text || '');
+        if (guessed) metadata = await crossrefByTitle(guessed);
+      } catch (error) {
+        metadata = null;
+      }
+    }
   }
   if (!metadata || (!metadata.title && !metadata.venue && !metadata.doi)) {
     throw new Error('没有可补全的元数据');
