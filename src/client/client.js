@@ -888,6 +888,50 @@ window.__ModuleLoader__.load({
       );
     }
 
+    function collectTranslationBlocks(root) {
+      if (!root) return [];
+      const nodes = root.querySelectorAll('h1,h2,h3,h4,h5,p,div,span,li,td,th,strong,em,small,label,blockquote');
+      const seen = new Set();
+      const blocks = [];
+      for (const element of nodes) {
+        if (element.closest('.lit-translation-bar')) continue;
+        if (element.closest('button,a,input,textarea,select,code,pre,svg,canvas')) continue;
+        if (element.children.length > 0) continue;
+        const original = String(element.textContent || '');
+        const text = original.replace(/\s+/g, ' ').trim();
+        if (text.length < 8 || text.length > 1600) continue;
+        if (!/[\p{L}]/u.test(text)) continue;
+        if (/^(https?:\/\/|doi\s*:|10\.\d{4,}\/)/i.test(text)) continue;
+        if (seen.has(text)) continue;
+        seen.add(text);
+        blocks.push({ element, text, original });
+      }
+      return blocks;
+    }
+
+    function restoreTranslationBlocks(root) {
+      if (!root) return;
+      for (const element of root.querySelectorAll('[data-lit-original]')) {
+        element.textContent = element.dataset.litOriginal || '';
+        delete element.dataset.litOriginal;
+        delete element.dataset.litI18n;
+      }
+    }
+
+    function applyTranslationBlocks(root, mode, translations) {
+      if (!root) return;
+      restoreTranslationBlocks(root);
+      if (mode === 'original' || !translations?.size) return;
+      const blocks = collectTranslationBlocks(root);
+      for (const { element, text, original } of blocks) {
+        const translated = translations.get(text);
+        if (!translated) continue;
+        element.dataset.litOriginal = original;
+        element.dataset.litI18n = '1';
+        element.textContent = mode === 'bilingual' ? `${text}\n〔译〕${translated}` : translated;
+      }
+    }
+
     function StatusPill({ status }) {
       const map = {
         verified: { text: '已验证', cls: 'ok' },
@@ -1139,7 +1183,7 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function PageTranslationView({ busy, text, source, error, mode, onMode, onClose, onRetry }) {
+    function TranslationBar({ busy, error, mode, count, onMode, onClose, onRetry }) {
       const modeButton = (id, label) =>
         h(
           'button',
@@ -1152,60 +1196,28 @@ window.__ModuleLoader__.load({
           label
         );
       return h(
-        'section',
-        { className: 'lit-translation-view', 'aria-label': '页面翻译' },
+        'div',
+        { className: 'lit-translation-bar', role: 'region', 'aria-label': '页面翻译' },
         h(
           'div',
-          { className: 'lit-translation-toolbar' },
-          h(
-            'div',
-            { className: 'lit-translation-heading' },
-            h(Icon, { name: 'sparkles', size: 15 }),
-            h('span', null, '当前页面翻译'),
-            h('span', { className: 'lit-translation-count' }, `${source.length} 字符`)
-          ),
-          h(
-            'div',
-            { className: 'lit-translation-modes' },
-            modeButton('original', '原文'),
-            modeButton('translated', '译文'),
-            modeButton('bilingual', '双语')
-          ),
-          h(
-            'div',
-            { className: 'lit-translation-actions' },
-            h('button', { type: 'button', className: 'lit-btn lit-btn-ghost', onClick: onRetry, disabled: busy }, '重新翻译'),
-            h('button', { type: 'button', className: 'lit-btn lit-btn-ghost', onClick: onClose, disabled: busy }, '关闭')
-          )
+          { className: 'lit-translation-bar-title' },
+          h(Icon, { name: 'sparkles', size: 14 }),
+          h('span', null, busy ? '正在原位翻译…' : `页面已翻译 ${count} 段`)
         ),
-        busy
-          ? h('div', { className: 'lit-translation-status' }, '正在翻译，长文本可能需要一点时间…')
-          : error
-            ? h(
-                'div',
-                { className: 'lit-translation-status lit-translation-error' },
-                `翻译失败：${error}。请确认 DSH 内置翻译插件已启用。`
-              )
-            : h(
-                'div',
-                { className: mode === 'bilingual' ? 'lit-translation-columns' : 'lit-translation-single' },
-                mode !== 'translated'
-                  ? h(
-                      'div',
-                      { className: 'lit-translation-pane' },
-                      h('div', { className: 'lit-translation-label' }, '原文'),
-                      h('div', { className: 'lit-translation-text' }, source || '没有可显示的原文。')
-                    )
-                  : null,
-                mode !== 'original'
-                  ? h(
-                      'div',
-                      { className: 'lit-translation-pane' },
-                      h('div', { className: 'lit-translation-label' }, '译文'),
-                      h('div', { className: 'lit-translation-text' }, text || '没有可翻译的正文。')
-                    )
-                  : null
-              )
+        error ? h('span', { className: 'lit-translation-bar-error' }, `翻译失败：${error}`) : null,
+        h(
+          'div',
+          { className: 'lit-translation-modes' },
+          modeButton('original', '原文'),
+          modeButton('translated', '译文'),
+          modeButton('bilingual', '双语')
+        ),
+        h(
+          'div',
+          { className: 'lit-translation-actions' },
+          h('button', { type: 'button', className: 'lit-btn lit-btn-ghost', onClick: onRetry, disabled: busy }, '重新翻译'),
+          h('button', { type: 'button', className: 'lit-btn lit-btn-ghost', onClick: onClose, disabled: busy }, '关闭')
+        )
       );
     }
 
@@ -5233,41 +5245,19 @@ window.__ModuleLoader__.load({
       .lit-import-result-sub { margin-top: 3px; color: var(--dsw-alias-label-secondary, #92a0ae); font-size: 10.5px; }
       .lit-import-result-row { margin-top: 5px; font-size: 11px; color: var(--dsw-alias-label-secondary, #92a0ae); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .lit-import-result-error { margin-top: 6px; color: var(--dsw-alias-state-error-primary, #ff9f9f); font-size: 10.5px; }
-      .lit-translation-view {
-        height: 100%; min-height: 0; display: flex; flex-direction: column;
-        gap: 12px; padding: 14px 16px; overflow: hidden;
-      }
-      .lit-translation-toolbar {
-        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-        padding-bottom: 10px; border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.1));
-      }
-      .lit-translation-heading { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 650; color: var(--dsw-alias-label-primary, #e8eef5); }
-      .lit-translation-count { color: var(--dsw-alias-label-secondary, #92a0ae); font-size: 10px; font-weight: 400; }
-      .lit-translation-modes { display: flex; align-items: center; gap: 5px; margin-left: auto; }
-      .lit-translation-actions { display: flex; align-items: center; gap: 5px; }
-      .lit-translation-status { flex: 1; display: grid; place-items: center; padding: 24px; color: var(--dsw-alias-label-secondary, #92a0ae); font-size: 12px; }
-      .lit-translation-error { color: var(--dsw-alias-state-error-primary, #ff9f9f); }
-      .lit-translation-columns { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
-      .lit-translation-single { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
-      .lit-translation-pane {
-        min-height: 0; display: flex; flex-direction: column; overflow: hidden;
-        border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.1)); border-radius: 9px;
+      .lit-translation-bar {
+        display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+        margin: 0 12px 8px; padding: 7px 10px; border-radius: 8px;
+        border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.12));
         background: var(--dsw-alias-bg-layer-1, #17222d);
-      }
-      .lit-translation-label {
-        flex: 0 0 auto; padding: 7px 10px; font-size: 10px; font-weight: 650; letter-spacing: .06em;
-        color: var(--dsw-alias-label-secondary, #92a0ae);
-        border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.08));
-        background: var(--dsw-alias-bg-layer-2, #22303d);
-      }
-      .lit-translation-text {
-        flex: 1; min-height: 0; overflow: auto; white-space: pre-wrap;
-        padding: 12px; line-height: 1.7; font-size: 12px;
         color: var(--dsw-alias-label-primary, #e8eef5);
       }
-      @media (max-width: 900px) {
-        .lit-translation-columns { grid-template-columns: minmax(0, 1fr); }
-      }
+      .lit-translation-bar-title { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 650; }
+      .lit-translation-bar-error { color: var(--dsw-alias-state-error-primary, #ff9f9f); font-size: 10.5px; }
+      .lit-translation-modes { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+      .lit-translation-actions { display: flex; align-items: center; gap: 4px; }
+      [data-lit-i18n="1"] { white-space: pre-line; }
+      [data-lit-i18n="1"]::before { content: ''; }
       .lit-link-btn { border: 0; background: none; color: var(--dsw-alias-brand-primary, #9fd0ff); cursor: pointer; font-size: 10px; padding: 0; text-decoration: underline; }
       .lit-import-divider { display: flex; align-items: center; gap: 8px; margin: 14px 0 8px; color: var(--dsw-alias-label-secondary, #6f7f8e); font-size: 9.5px; }
       .lit-import-divider::before, .lit-import-divider::after { content: ''; height: 1px; flex: 1; background: var(--dsw-alias-border-l1, rgba(255,255,255,.1)); }
@@ -5509,7 +5499,7 @@ window.__ModuleLoader__.load({
       }
     `;
 
-    function LitWorkspace({ t, translatePage, themeStore }) {
+    function LitWorkspace({ t, translatePage, translateTexts, themeStore }) {
       const L = (key, fallback) => {
         try {
           const value = t ? t(key) : '';
@@ -5655,11 +5645,11 @@ window.__ModuleLoader__.load({
       const [translation, setTranslation] = useState({
         open: false,
         busy: false,
-        text: '',
-        source: '',
         error: '',
         mode: 'translated',
+        count: 0,
       });
+      const translationMapRef = useRef(new Map());
       const paperHashesRef = useRef({});
       const groupSaveTimersRef = useRef({});
       const groupDraftsRef = useRef({});
@@ -5667,27 +5657,55 @@ window.__ModuleLoader__.load({
         JSON.stringify({ sections: paper.summary?.sections || [], groups: paper.groups || [] });
 
       const runPageTranslation = async () => {
-        const content = rootRef.current?.querySelector('.lit-content') || rootRef.current;
-        const captured = String(content?.innerText || '').trim();
-        const source = translation.open && translation.source ? translation.source : captured;
+        const content = rootRef.current?.querySelector('.lit-content');
         setTranslation((previous) => ({
           ...previous,
           open: true,
           busy: true,
-          text: '',
-          source,
           error: '',
           mode: previous.mode || 'translated',
         }));
         try {
-          if (typeof translatePage !== 'function') throw new Error('内置翻译服务不可用');
-          if (!source) throw new Error('当前页面没有可翻译的文字');
-          const text = await translatePage(source.slice(0, 12000));
-          setTranslation((previous) => ({ ...previous, busy: false, text, error: '' }));
+          if (!content) throw new Error('当前页面没有可翻译的区域');
+          restoreTranslationBlocks(content);
+          const blocks = collectTranslationBlocks(content);
+          if (!blocks.length) throw new Error('当前页面没有可翻译的文字');
+          const texts = [...new Set(blocks.map((block) => block.text))].slice(0, 60);
+          const translator = typeof translateTexts === 'function' ? translateTexts : null;
+          if (!translator) throw new Error('内置翻译服务不可用');
+          const translated = await translator(texts);
+          const map = new Map();
+          texts.forEach((text, index) => {
+            if (translated[index]) map.set(text, translated[index]);
+          });
+          translationMapRef.current = map;
+          setTranslation((previous) => ({
+            ...previous,
+            busy: false,
+            count: map.size,
+            error: '',
+            mode: 'translated',
+          }));
         } catch (error) {
-          setTranslation((previous) => ({ ...previous, busy: false, text: '', error: error.message }));
+          setTranslation((previous) => ({ ...previous, busy: false, error: error.message }));
         }
       };
+
+      const closeTranslation = () => {
+        restoreTranslationBlocks(rootRef.current?.querySelector('.lit-content'));
+        translationMapRef.current = new Map();
+        setTranslation({ open: false, busy: false, error: '', mode: 'translated', count: 0 });
+      };
+
+      useEffect(() => {
+        const content = rootRef.current?.querySelector('.lit-content');
+        if (!content) return;
+        if (translation.open && !translation.busy) {
+          applyTranslationBlocks(content, translation.mode, translationMapRef.current);
+        } else if (!translation.open) {
+          restoreTranslationBlocks(content);
+        }
+      });
 
       useEffect(() => {
         let unsubscribeTheme = () => {};
@@ -9964,29 +9982,29 @@ window.__ModuleLoader__.load({
               h('span', null, '本地服务未连接。点击右上角“刷新”重试；已加载内容会保留。')
             )
           : null,
+        translation.open
+          ? h(TranslationBar, {
+              busy: translation.busy,
+              error: translation.error,
+              mode: translation.mode,
+              count: translation.count,
+              onMode: (mode) => setTranslation((previous) => ({ ...previous, mode })),
+              onClose: closeTranslation,
+              onRetry: runPageTranslation,
+            })
+          : null,
         h(
           'main',
           { className: 'lit-content' },
-          translation.open
-            ? h(PageTranslationView, {
-                busy: translation.busy,
-                text: translation.text,
-                source: translation.source,
-                error: translation.error,
-                mode: translation.mode,
-                onMode: (mode) => setTranslation((previous) => ({ ...previous, mode })),
-                onClose: () => setTranslation((previous) => ({ ...previous, open: false })),
-                onRetry: runPageTranslation,
-              })
-            : tab === 'library'
-              ? renderLibrary()
-              : tab === 'tracking'
-                ? renderTracking()
-                : tab === 'ai'
-                  ? h(AiSearchModal, { inline: true })
-                  : tab === 'author'
-                    ? h(AuthorSearchPage)
-                    : renderGraph()
+          tab === 'library'
+            ? renderLibrary()
+            : tab === 'tracking'
+              ? renderTracking()
+              : tab === 'ai'
+                ? h(AiSearchModal, { inline: true })
+                : tab === 'author'
+                  ? h(AuthorSearchPage)
+                  : renderGraph()
         ),
         discoverOpen
           ? h(DiscoveryModal, {
@@ -10475,6 +10493,23 @@ window.__ModuleLoader__.load({
           }
           return output.join('\n');
         };
+        const translateTexts = async (texts) => {
+          try {
+            const endpoint = new URL('/lit-model/translate', window.location.href).toString();
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ texts, targetLanguage: document.documentElement.lang || 'zh-CN' }),
+            });
+            const body = await response.json().catch(() => ({}));
+            if (response.ok && body.ok === true && Array.isArray(body.texts)) return body.texts;
+          } catch (error) {
+            // Fall back to the remote translator below.
+          }
+          const output = [];
+          for (const text of texts) output.push(await translatePage(text));
+          return output;
+        };
 
         ctx.slots.inject('main', () =>
           ctx.slots.register(
@@ -10482,7 +10517,7 @@ window.__ModuleLoader__.load({
               name: 'main',
               key: 'lit-demo',
               locale: NS,
-              inject: () => ({ t, translatePage, themeStore }),
+              inject: () => ({ t, translatePage, translateTexts, themeStore }),
             },
             LitWorkspaceBoundary
           )

@@ -321,8 +321,6 @@ export function apply(ctx, config = {}) {
       }
       try {
         const payload = await readJson(req);
-        const text = String(payload.text || '').trim();
-        if (!text) throw new Error('text is empty');
         const translator = ctx.get?.('translator') || ctx.translator;
         if (!translator) throw new Error('内置翻译服务不可用，请启用 DSH 翻译插件');
         const providers = await translator.availableProviders();
@@ -333,16 +331,30 @@ export function apply(ctx, config = {}) {
         if (!preferred) throw new Error('没有可用的翻译服务');
         const maxChars = Number(translator.maxTextChars) || 4000;
         const targetLanguage = String(payload.targetLanguage || 'zh');
-        let translated = '';
-        for (let offset = 0; offset < text.length; offset += maxChars) {
-          const spec = translator.resolve({
-            text: text.slice(offset, offset + maxChars),
-            targetLanguage,
-            provider: preferred.id,
-          });
-          translated += await translator.translate(spec);
+        const translateOne = async (value) => {
+          const text = String(value || '').trim();
+          if (!text) return '';
+          let translated = '';
+          for (let offset = 0; offset < text.length; offset += maxChars) {
+            const spec = translator.resolve({
+              text: text.slice(offset, offset + maxChars),
+              targetLanguage,
+              provider: preferred.id,
+            });
+            translated += await translator.translate(spec);
+          }
+          return translated;
+        };
+        if (Array.isArray(payload.texts)) {
+          const texts = payload.texts.slice(0, 80).map((value) => String(value || ''));
+          const output = [];
+          for (const value of texts) output.push(await translateOne(value));
+          sendJson(res, 200, { ok: true, texts: output, provider: preferred.id });
+          return;
         }
-        sendJson(res, 200, { ok: true, text: translated, provider: preferred.id });
+        const text = String(payload.text || '').trim();
+        if (!text) throw new Error('text is empty');
+        sendJson(res, 200, { ok: true, text: await translateOne(text), provider: preferred.id });
       } catch (error) {
         sendJson(res, 502, { ok: false, error: error.message });
       }
