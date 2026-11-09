@@ -5342,6 +5342,74 @@ window.__ModuleLoader__.load({
         overflow-y: auto;
         overscroll-behavior: contain;
       }
+      .lit-root button { color: var(--dsw-alias-label-primary, #e8eef5); }
+      .lit-root .lit-btn-primary { color: #ffffff; }
+      .lit-root button:disabled { opacity: .62; }
+      .lit-theme-light .lit-btn,
+      .lit-theme-light .lit-read-button,
+      .lit-theme-light .lit-context-item,
+      .lit-theme-light .lit-logic-button,
+      .lit-theme-light .lit-segment button {
+        background-color: #f3f5f7;
+        color: #1f2937;
+        border-color: #d6dce3;
+        background-image: none;
+      }
+      .lit-theme-light .lit-btn-ghost {
+        background-color: transparent;
+        color: #1f2937;
+        border-color: transparent;
+      }
+      .lit-theme-light .lit-btn-ghost:hover {
+        background-color: #e9edf2;
+      }
+      .lit-theme-light .lit-btn-primary {
+        background-color: #2563eb;
+        background-image: none;
+        color: #ffffff;
+        border-color: #2563eb;
+      }
+      .lit-theme-light .lit-btn-danger {
+        background-color: #fff1f0;
+        color: #b42318;
+        border-color: #f3b7b2;
+      }
+      .lit-theme-light .lit-icon-btn {
+        color: #4b5563;
+        background: transparent;
+      }
+      .lit-theme-light .lit-icon-btn:hover {
+        color: #111827;
+        background: #e9edf2;
+      }
+      .lit-theme-light .lit-tab {
+        color: #5f6b7a;
+      }
+      .lit-theme-light .lit-tab-active {
+        color: #111827;
+      }
+      .lit-theme-light .lit-select,
+      .lit-theme-light .lit-input,
+      .lit-theme-light .lit-textarea,
+      .lit-theme-light .lit-search-input {
+        background-color: #ffffff;
+        color: #1f2937;
+        border-color: #cbd5e1;
+      }
+      .lit-theme-light button:disabled {
+        color: #6b7280;
+        opacity: .7;
+      }
+      .lit-theme-light .lit-btn:disabled {
+        background-color: #e9edf2;
+        color: #6b7280;
+        border-color: #d6dce3;
+      }
+      .lit-theme-light .lit-btn-primary:disabled {
+        background-color: #93b4f5;
+        color: #ffffff;
+        border-color: #93b4f5;
+      }
     `;
 
     function LitWorkspace({ t, translatePage }) {
@@ -10198,21 +10266,36 @@ window.__ModuleLoader__.load({
         ctx.effect(() => ctx.locale.register(NS, I18N), 'lit-demo: locale');
         const t = ctx.locale.bind(NS);
         const translatePage = async (text) => {
+          const targetLanguage = document.documentElement.lang || 'zh-CN';
+          let hostError = null;
+          try {
+            const endpoint = new URL('/lit-model/translate', window.location.href).toString();
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ text, targetLanguage }),
+            });
+            const body = await response.json().catch(() => ({}));
+            if (response.ok && body.ok === true) return body.text;
+            hostError = new Error(body.error || `翻译服务 HTTP ${response.status}`);
+          } catch (error) {
+            hostError = error;
+          }
           const remote = ctx.get?.('remote')?.cotTranslation || ctx.remote?.cotTranslation;
-          if (!remote) throw new Error('未找到 DSH 内置翻译服务');
+          if (!remote) throw hostError || new Error('未找到 DSH 内置翻译服务');
           const controller = new AbortController();
           const limits = await remote.limits(controller.signal);
-          if (!limits?.ok) throw limits?.error || new Error('翻译服务不可用');
+          if (!limits?.ok) throw hostError || limits?.error || new Error('翻译服务不可用');
           const { maxTextChars = 4000, preferences = {} } = limits.value || {};
-          const targetLanguage = preferences.targetLanguage && preferences.targetLanguage !== 'auto'
+          const remoteTarget = preferences.targetLanguage && preferences.targetLanguage !== 'auto'
             ? preferences.targetLanguage
-            : document.documentElement.lang || 'zh-CN';
+            : targetLanguage;
           const output = [];
           for (let index = 0; index < text.length; index += maxTextChars) {
             const result = await remote.translate(
               {
                 text: text.slice(index, index + maxTextChars),
-                targetLanguage,
+                targetLanguage: remoteTarget,
                 ...(preferences.provider ? { provider: preferences.provider } : {}),
               },
               controller.signal

@@ -364,6 +364,54 @@ export function apply(ctx, config = {}) {
   });
   ctx.effect(() => proxyRoute);
 
+  const translateRoute = ctx.webServer.register({
+    kind: 'exact',
+    path: '/lit-model/translate',
+    handler: async (req, res) => {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'access-control-allow-origin': '*',
+          'access-control-allow-methods': 'POST,OPTIONS',
+          'access-control-allow-headers': 'content-type',
+        });
+        res.end();
+        return;
+      }
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { ok: false, error: 'POST required' });
+        return;
+      }
+      try {
+        const payload = await readJson(req);
+        const text = String(payload.text || '').trim();
+        if (!text) throw new Error('text is empty');
+        const translator = ctx.get?.('translator') || ctx.translator;
+        if (!translator) throw new Error('内置翻译服务不可用，请启用 DSH 翻译插件');
+        const providers = await translator.availableProviders();
+        const preferred =
+          providers.find((provider) => provider.id === payload.provider) ||
+          providers.find((provider) => provider.id === 'bing') ||
+          providers[0];
+        if (!preferred) throw new Error('没有可用的翻译服务');
+        const maxChars = Number(translator.maxTextChars) || 4000;
+        const targetLanguage = String(payload.targetLanguage || 'zh');
+        let translated = '';
+        for (let offset = 0; offset < text.length; offset += maxChars) {
+          const spec = translator.resolve({
+            text: text.slice(offset, offset + maxChars),
+            targetLanguage,
+            provider: preferred.id,
+          });
+          translated += await translator.translate(spec);
+        }
+        sendJson(res, 200, { ok: true, text: translated, provider: preferred.id });
+      } catch (error) {
+        sendJson(res, 502, { ok: false, error: error.message });
+      }
+    },
+  });
+  ctx.effect(() => translateRoute);
+
   const route = ctx.webServer.register({
     kind: 'exact',
     path: ROUTE,
