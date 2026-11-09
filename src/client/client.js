@@ -4498,6 +4498,7 @@ window.__ModuleLoader__.load({
         color: var(--dsw-alias-state-warn-primary, #f5c451); font-size: 11.5px; white-space: nowrap;
         padding: 4px 8px; border-radius: 6px; background: rgba(245,196,81,.08);
       }
+      .lit-citation-action { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
       .lit-save-state {
         color: var(--dsw-alias-label-secondary, #92a0ae); font-size: 10px; white-space: nowrap;
         padding: 3px 7px; border-radius: 999px; border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.12));
@@ -8490,24 +8491,11 @@ window.__ModuleLoader__.load({
                   {
                     type: 'button',
                     className: 'lit-btn lit-btn-ghost',
-                    onClick: () => {
-                      setAttachTarget(null);
-                      setImportOpen(true);
-                    },
+                    onClick: () => setImportCenterOpen(true),
+                    title: '导入 PDF、手动元数据、DOI、RIS 或 EndNote',
                   },
                   h(Icon, { name: 'plus', size: 12 }),
                   '导入'
-                ),
-                h(
-                  'button',
-                  {
-                    type: 'button',
-                    className: 'lit-btn lit-btn-ghost',
-                    onClick: () => setImportCenterOpen(true),
-                    title: '批量 PDF、手动元数据、DOI、RIS 或 EndNote',
-                  },
-                  h(Icon, { name: 'file', size: 12 }),
-                  '批量 / 文献'
                 ),
                 h(
                   'select',
@@ -9932,16 +9920,16 @@ window.__ModuleLoader__.load({
                 type: 'button',
                 className: 'lit-btn lit-btn-ghost',
                 onClick: () => setImportCenterOpen(true),
-                title: '批量 PDF、手动元数据、DOI、RIS 或 EndNote',
+                title: '导入 PDF、手动元数据、DOI、RIS 或 EndNote',
               },
               h(Icon, { name: 'plus', size: 13 }),
-              '导入文献'
+              '导入'
             ),
             h(
               'button',
               {
                 type: 'button',
-                className: 'lit-btn lit-btn-ghost',
+                className: 'lit-btn lit-btn-primary',
                 onClick: runPageTranslation,
                 disabled: translation.busy,
                 title: '使用 DSH 内置翻译翻译当前页面正文',
@@ -9957,21 +9945,25 @@ window.__ModuleLoader__.load({
                 )
               : null,
             h(
-              'span',
-              { className: 'lit-dirty' },
-              dirtyCount > 0 ? `${dirtyCount} 条引文需重新定位` : '引文位置已同步'
-            ),
-            h(
-              'button',
-              {
-                type: 'button',
-                className: 'lit-btn lit-btn-primary',
-                onClick: revalidateCitations,
-                disabled: revalidating || dataSource !== 'real' || citationCount === 0,
-                title: '在 PDF 文本中重新查找每条引文的原文位置，并更新页码和 bbox',
-              },
-              h(Icon, { name: 'check', size: 14 }),
-              revalidating ? '重新定位中…' : '重新定位引文'
+              'div',
+              { className: 'lit-citation-action' },
+              h(
+                'span',
+                { className: 'lit-dirty' },
+                dirtyCount > 0 ? `${dirtyCount} 条引文需重新定位` : '引文位置已同步'
+              ),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'lit-btn lit-btn-ghost',
+                  onClick: revalidateCitations,
+                  disabled: revalidating || dataSource !== 'real' || citationCount === 0,
+                  title: '在 PDF 文本中重新查找每条引文的原文位置，并更新页码和 bbox',
+                },
+                h(Icon, { name: 'check', size: 14 }),
+                revalidating ? '重新定位中…' : '重新定位引文'
+              )
             ),
             h(
               'button',
