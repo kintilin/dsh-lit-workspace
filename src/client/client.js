@@ -4697,10 +4697,10 @@ window.__ModuleLoader__.load({
       }
       .lit-btn:hover { filter: brightness(1.08); }
       .lit-btn-primary {
-        background-color: var(--dsw-alias-brand-primary, #72b7ff);
+        background-color: #2563eb;
         background-image: none;
-        border-color: var(--dsw-alias-brand-primary, #72b7ff);
-        color: #07111b;
+        border-color: #2563eb;
+        color: #ffffff;
         font-weight: 650;
       }
       .lit-btn-ghost { background: transparent; }
@@ -5343,7 +5343,6 @@ window.__ModuleLoader__.load({
         overscroll-behavior: contain;
       }
       .lit-root button { color: var(--dsw-alias-label-primary, #e8eef5); }
-      .lit-root .lit-btn-primary { color: #ffffff; }
       .lit-root button:disabled { opacity: .62; }
       .lit-theme-light .lit-btn,
       .lit-theme-light .lit-read-button,
@@ -5412,7 +5411,7 @@ window.__ModuleLoader__.load({
       }
     `;
 
-    function LitWorkspace({ t, translatePage }) {
+    function LitWorkspace({ t, translatePage, themeStore }) {
       const L = (key, fallback) => {
         try {
           const value = t ? t(key) : '';
@@ -5548,7 +5547,13 @@ window.__ModuleLoader__.load({
       const [acceptingSummary, setAcceptingSummary] = useState(false);
       const canvasRef = useRef(null);
       const rootRef = useRef(null);
-      const [lightTheme, setLightTheme] = useState(false);
+      const [lightTheme, setLightTheme] = useState(() => {
+        try {
+          return themeStore?.get?.() === 'light';
+        } catch (error) {
+          return false;
+        }
+      });
       const [translation, setTranslation] = useState({ open: false, busy: false, text: '', error: '' });
       const paperHashesRef = useRef({});
       const groupSaveTimersRef = useRef({});
@@ -5571,8 +5576,25 @@ window.__ModuleLoader__.load({
       };
 
       useEffect(() => {
+        let unsubscribeTheme = () => {};
+        try {
+          if (themeStore?.subscribe) {
+            unsubscribeTheme = themeStore.subscribe((scheme) => setLightTheme(scheme === 'light'));
+          }
+        } catch (error) {
+          // DOM fallback below still works.
+        }
         const detectTheme = () => {
           if (typeof getComputedStyle !== 'function') return;
+          try {
+            const scheme = themeStore?.get?.();
+            if (scheme === 'light' || scheme === 'dark') {
+              setLightTheme(scheme === 'light');
+              return;
+            }
+          } catch (error) {
+            // Fall back to DOM signals.
+          }
           if (document.body?.hasAttribute('data-ds-dark-theme')) {
             setLightTheme(false);
             return;
@@ -5609,8 +5631,11 @@ window.__ModuleLoader__.load({
           attributes: true,
           attributeFilter: ['class', 'style', 'data-theme', 'data-ds-dark-theme'],
         });
-        return () => observer.disconnect();
-      }, []);
+        return () => {
+          unsubscribeTheme();
+          observer.disconnect();
+        };
+      }, [themeStore]);
 
       useEffect(() => {
         if (dataSource !== 'real') return undefined;
@@ -5794,13 +5819,20 @@ window.__ModuleLoader__.load({
           ...section,
           entries: (section.entries || []).map((entry, index) => {
             const linked = (entry.evidence || []).map((id) => evidenceById[id]).find(Boolean);
+            const quote = entry.quote || linked?.quote || '';
+            const page = entry.page ?? linked?.page ?? null;
+            const bbox = entry.bbox || linked?.bbox_pdf || null;
             return {
               ...entry,
               id: entry.id || `${section.key}-${index}`,
-              quote: entry.quote || linked?.quote || '',
-              page: entry.page ?? linked?.page ?? null,
-              bbox: entry.bbox || linked?.bbox_pdf || null,
+              quote,
+              page,
+              bbox,
               section: entry.section || '',
+              // Editing the claim text does not change the quote or its PDF
+              // location. Only a quote/page change should require re-location.
+              status:
+                entry.status === 'needs_recheck' && quote && page && bbox ? 'verified' : entry.status,
             };
           }),
         }));
@@ -7901,7 +7933,7 @@ window.__ModuleLoader__.load({
                       rows: 2,
                       placeholder: section.hint || '写一条内容…',
                       onChange: (event) =>
-                        patchEntry(selectedPaperData.id, section.key, entry.id, { text: event.target.value }, true),
+                        patchEntry(selectedPaperData.id, section.key, entry.id, { text: event.target.value }, false),
                     }),
                     h(
                       'div',
@@ -10261,10 +10293,32 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ['slots', 'locale'],
+      inject: ['slots', 'locale', 'theme'],
       apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, I18N), 'lit-demo: locale');
         const t = ctx.locale.bind(NS);
+        let themeScheme = 'dark';
+        try {
+          themeScheme = ctx.theme?.getTheme?.().active?.colorScheme || 'dark';
+        } catch (error) {
+          themeScheme = 'dark';
+        }
+        const themeListeners = new Set();
+        ctx.effect(() => {
+          if (typeof ctx.on !== 'function') return () => {};
+          return ctx.on('theme/change', (snapshot) => {
+            themeScheme = snapshot?.active?.colorScheme || themeScheme;
+            for (const listener of themeListeners) listener(themeScheme);
+          });
+        }, 'lit-demo: theme');
+        const themeStore = {
+          get: () => themeScheme,
+          subscribe: (listener) => {
+            themeListeners.add(listener);
+            listener(themeScheme);
+            return () => themeListeners.delete(listener);
+          },
+        };
         const translatePage = async (text) => {
           const targetLanguage = document.documentElement.lang || 'zh-CN';
           let hostError = null;
@@ -10312,7 +10366,7 @@ window.__ModuleLoader__.load({
               name: 'main',
               key: 'lit-demo',
               locale: NS,
-              inject: () => ({ t, translatePage }),
+              inject: () => ({ t, translatePage, themeStore }),
             },
             LitWorkspaceBoundary
           )
