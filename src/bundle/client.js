@@ -888,15 +888,22 @@ window.__ModuleLoader__.load({
       );
     }
 
+    const TRANSLATION_TITLE_SELECTOR =
+      '.lit-paper-title,.lit-paper-row-title,.lit-feed-card-title,.lit-feed-card-heading,.lit-author-paper-title,.lit-inspector-title,.lit-discovery-title';
+    const EMPTY_TRANSLATION = { open: false, busy: false, error: '', mode: 'translated', count: 0 };
+
     function collectTranslationBlocks(root) {
       if (!root) return [];
-      const nodes = root.querySelectorAll('h1,h2,h3,h4,h5,p,div,span,li,td,th,strong,em,small,label,blockquote');
+      const priority = [...root.querySelectorAll(TRANSLATION_TITLE_SELECTOR)];
+      const generic = [...root.querySelectorAll('h1,h2,h3,h4,h5,p,div,span,li,td,th,strong,em,small,label,blockquote')];
+      const nodes = [...priority, ...generic.filter((element) => !priority.includes(element))];
       const seen = new Set();
       const blocks = [];
       for (const element of nodes) {
         if (element.closest('.lit-translation-bar')) continue;
-        if (element.closest('button,a,input,textarea,select,code,pre,svg,canvas')) continue;
-        if (element.children.length > 0) continue;
+        const isTitle = element.matches(TRANSLATION_TITLE_SELECTOR);
+        if (!isTitle && element.closest('button,a,input,textarea,select,code,pre,svg,canvas')) continue;
+        if (!isTitle && element.children.length > 0) continue;
         const original = String(element.textContent || '');
         const text = original.replace(/\s+/g, ' ').trim();
         if (text.length < 8 || text.length > 1600) continue;
@@ -5642,14 +5649,14 @@ window.__ModuleLoader__.load({
           return false;
         }
       });
-      const [translation, setTranslation] = useState({
-        open: false,
-        busy: false,
-        error: '',
-        mode: 'translated',
-        count: 0,
-      });
-      const translationMapRef = useRef(new Map());
+      const [translationPages, setTranslationPages] = useState({});
+      const translationMapsRef = useRef({});
+      const translation = translationPages[tab] || EMPTY_TRANSLATION;
+      const updateTranslation = (patch) =>
+        setTranslationPages((previous) => ({
+          ...previous,
+          [tab]: { ...(previous[tab] || EMPTY_TRANSLATION), ...patch },
+        }));
       const paperHashesRef = useRef({});
       const groupSaveTimersRef = useRef({});
       const groupDraftsRef = useRef({});
@@ -5657,20 +5664,18 @@ window.__ModuleLoader__.load({
         JSON.stringify({ sections: paper.summary?.sections || [], groups: paper.groups || [] });
 
       const runPageTranslation = async () => {
+        const pageKey = tab;
         const content = rootRef.current?.querySelector('.lit-content');
-        setTranslation((previous) => ({
+        setTranslationPages((previous) => ({
           ...previous,
-          open: true,
-          busy: true,
-          error: '',
-          mode: previous.mode || 'translated',
+          [pageKey]: { ...(previous[pageKey] || EMPTY_TRANSLATION), open: true, busy: true, error: '' },
         }));
         try {
           if (!content) throw new Error('当前页面没有可翻译的区域');
           restoreTranslationBlocks(content);
           const blocks = collectTranslationBlocks(content);
           if (!blocks.length) throw new Error('当前页面没有可翻译的文字');
-          const texts = [...new Set(blocks.map((block) => block.text))].slice(0, 60);
+          const texts = [...new Set(blocks.map((block) => block.text))].slice(0, 80);
           const translator = typeof translateTexts === 'function' ? translateTexts : null;
           if (!translator) throw new Error('内置翻译服务不可用');
           const translated = await translator(texts);
@@ -5678,31 +5683,42 @@ window.__ModuleLoader__.load({
           texts.forEach((text, index) => {
             if (translated[index]) map.set(text, translated[index]);
           });
-          translationMapRef.current = map;
-          setTranslation((previous) => ({
+          translationMapsRef.current[pageKey] = map;
+          setTranslationPages((previous) => ({
             ...previous,
-            busy: false,
-            count: map.size,
-            error: '',
-            mode: 'translated',
+            [pageKey]: {
+              ...(previous[pageKey] || EMPTY_TRANSLATION),
+              busy: false,
+              count: map.size,
+              error: '',
+              mode: 'translated',
+            },
           }));
         } catch (error) {
-          setTranslation((previous) => ({ ...previous, busy: false, error: error.message }));
+          setTranslationPages((previous) => ({
+            ...previous,
+            [pageKey]: { ...(previous[pageKey] || EMPTY_TRANSLATION), busy: false, error: error.message },
+          }));
         }
       };
 
       const closeTranslation = () => {
         restoreTranslationBlocks(rootRef.current?.querySelector('.lit-content'));
-        translationMapRef.current = new Map();
-        setTranslation({ open: false, busy: false, error: '', mode: 'translated', count: 0 });
+        delete translationMapsRef.current[tab];
+        setTranslationPages((previous) => {
+          const next = { ...previous };
+          delete next[tab];
+          return next;
+        });
       };
 
       useEffect(() => {
         const content = rootRef.current?.querySelector('.lit-content');
         if (!content) return;
-        if (translation.open && !translation.busy) {
-          applyTranslationBlocks(content, translation.mode, translationMapRef.current);
-        } else if (!translation.open) {
+        const pageTranslation = translationPages[tab];
+        if (pageTranslation?.open && !pageTranslation.busy) {
+          applyTranslationBlocks(content, pageTranslation.mode, translationMapsRef.current[tab]);
+        } else {
           restoreTranslationBlocks(content);
         }
       });
@@ -9988,7 +10004,7 @@ window.__ModuleLoader__.load({
               error: translation.error,
               mode: translation.mode,
               count: translation.count,
-              onMode: (mode) => setTranslation((previous) => ({ ...previous, mode })),
+              onMode: (mode) => updateTranslation({ mode }),
               onClose: closeTranslation,
               onRetry: runPageTranslation,
             })
