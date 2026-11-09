@@ -1139,47 +1139,73 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function TranslationModal({ busy, text, error, onClose, onRetry }) {
-      return h(
-        'div',
-        {
-          className: 'lit-modal-backdrop',
-          role: 'presentation',
-          onMouseDown: (event) => {
-            if (event.target === event.currentTarget && !busy) onClose();
+    function PageTranslationView({ busy, text, source, error, mode, onMode, onClose, onRetry }) {
+      const modeButton = (id, label) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            className: mode === id ? 'lit-btn lit-btn-primary' : 'lit-btn lit-btn-ghost',
+            onClick: () => onMode(id),
+            disabled: busy,
           },
-        },
+          label
+        );
+      return h(
+        'section',
+        { className: 'lit-translation-view', 'aria-label': '页面翻译' },
         h(
           'div',
-          { className: 'lit-modal lit-translation-modal', role: 'dialog', 'aria-modal': 'true' },
+          { className: 'lit-translation-toolbar' },
           h(
             'div',
-            { className: 'lit-modal-head' },
-            h(
-              'div',
-              null,
-              h('div', { className: 'lit-eyebrow' }, '翻译'),
-              h('h2', { className: 'lit-modal-title' }, '当前页面翻译'),
-              h('div', { className: 'lit-modal-sub', style: { margin: '6px 0 0' } }, '使用 DSH 内置翻译服务，仅翻译当前工作台正文。')
-            ),
-            h('button', { className: 'lit-icon-btn', type: 'button', title: '关闭', onClick: onClose, disabled: busy }, h(Icon, { name: 'x', size: 16 }))
+            { className: 'lit-translation-heading' },
+            h(Icon, { name: 'sparkles', size: 15 }),
+            h('span', null, '当前页面翻译'),
+            h('span', { className: 'lit-translation-count' }, `${source.length} 字符`)
           ),
-          busy
-            ? h('div', { className: 'lit-import-progress' }, '正在翻译，长文本可能需要一点时间…')
-            : error
-              ? h(
-                  'div',
-                  { className: 'lit-import-result-error' },
-                  `翻译失败：${error}。请在 DSH 设置中确认内置翻译插件已启用。`,
-                  h('button', { type: 'button', className: 'lit-btn lit-btn-ghost', onClick: onRetry, style: { marginTop: '10px' } }, '重试')
-                )
-              : h('div', { className: 'lit-translation-body' }, text || '没有可翻译的正文。'),
           h(
             'div',
-            { className: 'lit-modal-actions' },
+            { className: 'lit-translation-modes' },
+            modeButton('original', '原文'),
+            modeButton('translated', '译文'),
+            modeButton('bilingual', '双语')
+          ),
+          h(
+            'div',
+            { className: 'lit-translation-actions' },
+            h('button', { type: 'button', className: 'lit-btn lit-btn-ghost', onClick: onRetry, disabled: busy }, '重新翻译'),
             h('button', { type: 'button', className: 'lit-btn lit-btn-ghost', onClick: onClose, disabled: busy }, '关闭')
           )
-        )
+        ),
+        busy
+          ? h('div', { className: 'lit-translation-status' }, '正在翻译，长文本可能需要一点时间…')
+          : error
+            ? h(
+                'div',
+                { className: 'lit-translation-status lit-translation-error' },
+                `翻译失败：${error}。请确认 DSH 内置翻译插件已启用。`
+              )
+            : h(
+                'div',
+                { className: mode === 'bilingual' ? 'lit-translation-columns' : 'lit-translation-single' },
+                mode !== 'translated'
+                  ? h(
+                      'div',
+                      { className: 'lit-translation-pane' },
+                      h('div', { className: 'lit-translation-label' }, '原文'),
+                      h('div', { className: 'lit-translation-text' }, source || '没有可显示的原文。')
+                    )
+                  : null,
+                mode !== 'original'
+                  ? h(
+                      'div',
+                      { className: 'lit-translation-pane' },
+                      h('div', { className: 'lit-translation-label' }, '译文'),
+                      h('div', { className: 'lit-translation-text' }, text || '没有可翻译的正文。')
+                    )
+                  : null
+              )
       );
     }
 
@@ -5207,8 +5233,41 @@ window.__ModuleLoader__.load({
       .lit-import-result-sub { margin-top: 3px; color: var(--dsw-alias-label-secondary, #92a0ae); font-size: 10.5px; }
       .lit-import-result-row { margin-top: 5px; font-size: 11px; color: var(--dsw-alias-label-secondary, #92a0ae); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .lit-import-result-error { margin-top: 6px; color: var(--dsw-alias-state-error-primary, #ff9f9f); font-size: 10.5px; }
-      .lit-translation-modal { width: min(840px, 100%); max-height: 82vh; overflow: auto; }
-      .lit-translation-body { margin-top: 12px; max-height: 52vh; overflow: auto; white-space: pre-wrap; line-height: 1.65; font-size: 12px; color: var(--dsw-alias-label-primary, #e8eef5); }
+      .lit-translation-view {
+        height: 100%; min-height: 0; display: flex; flex-direction: column;
+        gap: 12px; padding: 14px 16px; overflow: hidden;
+      }
+      .lit-translation-toolbar {
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        padding-bottom: 10px; border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.1));
+      }
+      .lit-translation-heading { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 650; color: var(--dsw-alias-label-primary, #e8eef5); }
+      .lit-translation-count { color: var(--dsw-alias-label-secondary, #92a0ae); font-size: 10px; font-weight: 400; }
+      .lit-translation-modes { display: flex; align-items: center; gap: 5px; margin-left: auto; }
+      .lit-translation-actions { display: flex; align-items: center; gap: 5px; }
+      .lit-translation-status { flex: 1; display: grid; place-items: center; padding: 24px; color: var(--dsw-alias-label-secondary, #92a0ae); font-size: 12px; }
+      .lit-translation-error { color: var(--dsw-alias-state-error-primary, #ff9f9f); }
+      .lit-translation-columns { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+      .lit-translation-single { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+      .lit-translation-pane {
+        min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+        border: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.1)); border-radius: 9px;
+        background: var(--dsw-alias-bg-layer-1, #17222d);
+      }
+      .lit-translation-label {
+        flex: 0 0 auto; padding: 7px 10px; font-size: 10px; font-weight: 650; letter-spacing: .06em;
+        color: var(--dsw-alias-label-secondary, #92a0ae);
+        border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.08));
+        background: var(--dsw-alias-bg-layer-2, #22303d);
+      }
+      .lit-translation-text {
+        flex: 1; min-height: 0; overflow: auto; white-space: pre-wrap;
+        padding: 12px; line-height: 1.7; font-size: 12px;
+        color: var(--dsw-alias-label-primary, #e8eef5);
+      }
+      @media (max-width: 900px) {
+        .lit-translation-columns { grid-template-columns: minmax(0, 1fr); }
+      }
       .lit-link-btn { border: 0; background: none; color: var(--dsw-alias-brand-primary, #9fd0ff); cursor: pointer; font-size: 10px; padding: 0; text-decoration: underline; }
       .lit-import-divider { display: flex; align-items: center; gap: 8px; margin: 14px 0 8px; color: var(--dsw-alias-label-secondary, #6f7f8e); font-size: 9.5px; }
       .lit-import-divider::before, .lit-import-divider::after { content: ''; height: 1px; flex: 1; background: var(--dsw-alias-border-l1, rgba(255,255,255,.1)); }
@@ -5593,7 +5652,14 @@ window.__ModuleLoader__.load({
           return false;
         }
       });
-      const [translation, setTranslation] = useState({ open: false, busy: false, text: '', error: '' });
+      const [translation, setTranslation] = useState({
+        open: false,
+        busy: false,
+        text: '',
+        source: '',
+        error: '',
+        mode: 'translated',
+      });
       const paperHashesRef = useRef({});
       const groupSaveTimersRef = useRef({});
       const groupDraftsRef = useRef({});
@@ -5601,16 +5667,25 @@ window.__ModuleLoader__.load({
         JSON.stringify({ sections: paper.summary?.sections || [], groups: paper.groups || [] });
 
       const runPageTranslation = async () => {
-        setTranslation({ open: true, busy: true, text: '', error: '' });
+        const content = rootRef.current?.querySelector('.lit-content') || rootRef.current;
+        const captured = String(content?.innerText || '').trim();
+        const source = translation.open && translation.source ? translation.source : captured;
+        setTranslation((previous) => ({
+          ...previous,
+          open: true,
+          busy: true,
+          text: '',
+          source,
+          error: '',
+          mode: previous.mode || 'translated',
+        }));
         try {
           if (typeof translatePage !== 'function') throw new Error('内置翻译服务不可用');
-          const content = rootRef.current?.querySelector('.lit-content') || rootRef.current;
-          const source = String(content?.innerText || '').trim();
           if (!source) throw new Error('当前页面没有可翻译的文字');
           const text = await translatePage(source.slice(0, 12000));
-          setTranslation({ open: true, busy: false, text, error: '' });
+          setTranslation((previous) => ({ ...previous, busy: false, text, error: '' }));
         } catch (error) {
-          setTranslation({ open: true, busy: false, text: '', error: error.message });
+          setTranslation((previous) => ({ ...previous, busy: false, text: '', error: error.message }));
         }
       };
 
@@ -9838,7 +9913,7 @@ window.__ModuleLoader__.load({
                 title: '使用 DSH 内置翻译翻译当前页面正文',
               },
               h(Icon, { name: 'sparkles', size: 13 }),
-              translation.busy ? '翻译中…' : '翻译本页'
+              translation.busy ? '翻译中…' : translation.open ? '重新翻译' : '翻译本页'
             ),
             dataSource === 'real'
               ? h(
@@ -9892,15 +9967,26 @@ window.__ModuleLoader__.load({
         h(
           'main',
           { className: 'lit-content' },
-          tab === 'library'
-            ? renderLibrary()
-            : tab === 'tracking'
-              ? renderTracking()
-              : tab === 'ai'
-                ? h(AiSearchModal, { inline: true })
-                : tab === 'author'
-                  ? h(AuthorSearchPage)
-                  : renderGraph()
+          translation.open
+            ? h(PageTranslationView, {
+                busy: translation.busy,
+                text: translation.text,
+                source: translation.source,
+                error: translation.error,
+                mode: translation.mode,
+                onMode: (mode) => setTranslation((previous) => ({ ...previous, mode })),
+                onClose: () => setTranslation((previous) => ({ ...previous, open: false })),
+                onRetry: runPageTranslation,
+              })
+            : tab === 'library'
+              ? renderLibrary()
+              : tab === 'tracking'
+                ? renderTracking()
+                : tab === 'ai'
+                  ? h(AiSearchModal, { inline: true })
+                  : tab === 'author'
+                    ? h(AuthorSearchPage)
+                    : renderGraph()
         ),
         discoverOpen
           ? h(DiscoveryModal, {
@@ -10073,15 +10159,6 @@ window.__ModuleLoader__.load({
                 if (paper) applyRealPaper(paper);
                 loadRealLibrary(true);
               },
-            })
-          : null,
-        translation.open
-          ? h(TranslationModal, {
-              busy: translation.busy,
-              text: translation.text,
-              error: translation.error,
-              onClose: () => setTranslation({ open: false, busy: false, text: '', error: '' }),
-              onRetry: runPageTranslation,
             })
           : null,
         manualEvidence
