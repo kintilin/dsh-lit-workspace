@@ -579,7 +579,7 @@ function buildAutoSummary(extracted) {
       quote: located.found ? located.matched_text || cleanQuote : cleanQuote,
       page: located.found ? located.page_number : null,
       bbox: located.found ? located.bbox_pdf : null,
-      status: 'draft',
+      status: located.found ? 'verified' : cleanQuote ? 'missing' : 'draft',
       evidence: located.found ? [id] : [],
     };
     section.entries.push(entry);
@@ -679,7 +679,7 @@ async function generateModelSummary(row) {
         quote: savedQuote,
         page: located.found ? located.page_number : null,
         bbox: located.found ? located.bbox_pdf : null,
-        status: 'draft',
+        status: located.found ? 'verified' : quote ? 'missing' : 'draft',
         evidence: located.found ? [id] : [],
       });
       if (located.found) {

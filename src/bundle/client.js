@@ -941,10 +941,10 @@ window.__ModuleLoader__.load({
 
     function StatusPill({ status }) {
       const map = {
-        verified: { text: '已验证', cls: 'ok' },
-        needs_recheck: { text: '引文待定位', cls: 'warn' },
-        missing: { text: '未找到', cls: 'warn' },
-        draft: { text: '草稿', cls: 'muted' },
+        verified: { text: '已定位', cls: 'ok' },
+        needs_recheck: { text: '待定位', cls: 'warn' },
+        missing: { text: '未找到引文', cls: 'warn' },
+        draft: { text: '未定位', cls: 'muted' },
       };
       const item = map[status] || map.draft;
       return h('span', { className: `lit-status lit-status-${item.cls}` }, item.text);
@@ -3331,7 +3331,7 @@ window.__ModuleLoader__.load({
       );
     }
 
-    function TemplateModal({ paper, presets, groupTemplates, groups, onClose, onAdd, onApplyDefaults, onSaveDefault }) {
+    function TemplateModal({ paper, presets, groupTemplates, groups, onClose, onAdd, onSaveDefault }) {
       const groupById = Object.fromEntries((groups || []).map((group) => [group.id, group]));
       const [title, setTitle] = useState('');
       const [type, setType] = useState('text');
@@ -3421,12 +3421,6 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 { className: 'lit-template-actions' },
-                h(
-                  'button',
-                  { type: 'button', className: 'lit-btn lit-btn-primary', onClick: onApplyDefaults },
-                  h(Icon, { name: 'refresh', size: 13 }),
-                  '合并所有分组默认'
-                ),
                 h(
                   'div',
                   { className: 'lit-inline-form' },
@@ -4730,6 +4724,8 @@ window.__ModuleLoader__.load({
         border: 1px solid var(--dsw-alias-border-l2, rgba(255,255,255,.16));
         border-radius: 9px; box-shadow: 0 12px 30px rgba(0,0,0,.35); padding: 8px;
       }
+      .lit-group-menu-detail { max-height: none; overflow: visible; min-width: 220px; }
+      .lit-group-options-scroll { max-height: 190px; overflow-y: auto; overscroll-behavior: contain; }
       .lit-group-option { display: flex; align-items: center; gap: 8px; padding: 6px; border-radius: 6px; cursor: pointer; }
       .lit-group-option:hover { background: var(--dsw-alias-bg-layer-2, #22303d); }
       .lit-group-option input { accent-color: var(--dsw-alias-brand-primary, #72b7ff); }
@@ -5133,10 +5129,12 @@ window.__ModuleLoader__.load({
       .lit-group-move { display: inline-flex; flex-direction: column; gap: 1px; }
       .lit-group-move .lit-icon-btn { width: 20px; height: 16px; font-size: 10px; }
       .lit-group-manager-row {
-        display: grid; grid-template-columns: 28px minmax(0,1fr) 128px 26px;
-        gap: 8px; align-items: center; padding: 7px 0;
+        display: grid; grid-template-columns: 26px 26px minmax(0, 1fr) auto 26px;
+        gap: 6px; align-items: center; padding: 6px 0;
         border-bottom: 1px solid var(--dsw-alias-border-l1, rgba(255,255,255,.08));
       }
+      .lit-group-manager-row .lit-input { height: 28px; padding-left: 8px; }
+      .lit-group-manager-list { max-height: 220px; }
       .lit-color-input {
         width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px;
         background: transparent; cursor: pointer;
@@ -5438,6 +5436,7 @@ window.__ModuleLoader__.load({
         overflow-y: auto;
         overscroll-behavior: contain;
       }
+      .lit-group-menu.lit-group-menu-detail { max-height: none; overflow: visible; }
       .lit-root button { color: var(--dsw-alias-label-primary, #e8eef5); }
       .lit-root button:disabled { opacity: .62; }
       .lit-theme-light .lit-btn,
@@ -5572,6 +5571,7 @@ window.__ModuleLoader__.load({
       const [contextMenu, setContextMenu] = useState(null);
       const [groupManagerOpen, setGroupManagerOpen] = useState(false);
       const [groupMenuOpen, setGroupMenuOpen] = useState(false);
+      const groupMenuRef = useRef(null);
       const [bulkGroupOpen, setBulkGroupOpen] = useState(false);
       const [bulkGroupName, setBulkGroupName] = useState('');
       const [evidence, setEvidence] = useState(null);
@@ -5659,6 +5659,7 @@ window.__ModuleLoader__.load({
           [tab]: { ...(previous[tab] || EMPTY_TRANSLATION), ...patch },
         }));
       const paperHashesRef = useRef({});
+      const uiSettingsLoadedRef = useRef(false);
       const groupSaveTimersRef = useRef({});
       const groupDraftsRef = useRef({});
       const hashPaper = (paper) =>
@@ -5723,6 +5724,24 @@ window.__ModuleLoader__.load({
           restoreTranslationBlocks(content);
         }
       });
+
+      useEffect(() => {
+        if (!groupMenuOpen) return undefined;
+        const onPointerDown = (event) => {
+          if (groupMenuRef.current && !groupMenuRef.current.contains(event.target)) {
+            setGroupMenuOpen(false);
+          }
+        };
+        const onKeyDown = (event) => {
+          if (event.key === 'Escape') setGroupMenuOpen(false);
+        };
+        document.addEventListener('mousedown', onPointerDown);
+        document.addEventListener('keydown', onKeyDown);
+        return () => {
+          document.removeEventListener('mousedown', onPointerDown);
+          document.removeEventListener('keydown', onKeyDown);
+        };
+      }, [groupMenuOpen]);
 
       useEffect(() => {
         let unsubscribeTheme = () => {};
@@ -5830,18 +5849,59 @@ window.__ModuleLoader__.load({
       }, [state, dataSource]);
 
       useEffect(() => {
+        let cancelled = false;
+        (async () => {
+          try {
+            const response = await fetch(`${DSH_LIT_API_BASE}/api/ui-state?key=lit-settings`, { cache: 'no-store' });
+            const body = await response.json().catch(() => ({}));
+            if (!cancelled && response.ok && body.value && typeof body.value === 'object') {
+              setState((previous) => ({
+                ...previous,
+                sectionPresets: Array.isArray(body.value.sectionPresets) && body.value.sectionPresets.length
+                  ? body.value.sectionPresets
+                  : previous.sectionPresets,
+                groupTemplates:
+                  body.value.groupTemplates && typeof body.value.groupTemplates === 'object'
+                    ? body.value.groupTemplates
+                    : previous.groupTemplates,
+              }));
+            }
+          } catch (error) {
+            // litd may not be running yet; local defaults are still usable.
+          } finally {
+            uiSettingsLoadedRef.current = true;
+          }
+        })();
+        return () => {
+          cancelled = true;
+        };
+      }, []);
+
+      useEffect(() => {
+        if (!uiSettingsLoadedRef.current) return undefined;
+        const settings = {
+          sectionPresets: state.sectionPresets,
+          groupTemplates: state.groupTemplates,
+        };
         try {
-          window.localStorage.setItem(
-            SETTINGS_KEY,
-            JSON.stringify({
-              sectionPresets: state.sectionPresets,
-              groupTemplates: state.groupTemplates,
-            })
-          );
+          window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
         } catch (error) {
           // Settings persistence is best-effort.
         }
-      }, [state.sectionPresets, state.groupTemplates]);
+        if (dataSource !== 'real') return undefined;
+        const timer = window.setTimeout(async () => {
+          try {
+            await fetch(`${DSH_LIT_API_BASE}/api/ui-state`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ key: 'lit-settings', value: settings }),
+            });
+          } catch (error) {
+            // The next edit will retry.
+          }
+        }, 500);
+        return () => window.clearTimeout(timer);
+      }, [state.sectionPresets, state.groupTemplates, dataSource]);
 
       useEffect(() => {
         try {
@@ -5981,7 +6041,13 @@ window.__ModuleLoader__.load({
               // Editing the claim text does not change the quote or its PDF
               // location. Only a quote/page change should require re-location.
               status:
-                entry.status === 'needs_recheck' && quote && page && bbox ? 'verified' : entry.status,
+                entry.status === 'needs_recheck' && quote && page && bbox
+                  ? 'verified'
+                  : entry.status === 'draft' && quote
+                    ? page
+                      ? 'verified'
+                      : 'missing'
+                    : entry.status,
             };
           }),
         }));
@@ -7515,25 +7581,6 @@ window.__ModuleLoader__.load({
         });
       };
 
-      const applyGroupDefaults = (paperId) => {
-        mutate((next) => {
-          const paper = next.papers.find((item) => item.id === paperId);
-          if (!paper) return;
-          const hidden = new Set(paper.summary.hiddenSections || []);
-          const existing = new Set(paper.summary.sections.map((item) => item.key));
-          paper.groups.forEach((groupId) => {
-            (next.groupTemplates[groupId] || []).forEach((definition) => {
-              const key = definition.key || definition.id;
-              if (!key || hidden.has(key) || existing.has(key)) return;
-              paper.summary.sections.push(initSection(definition));
-              existing.add(key);
-            });
-          });
-          paper.edited = true;
-        });
-        setToast('已合并当前全部分组的默认大类');
-      };
-
       const saveGroupDefault = (paperId, groupId) => {
         mutate((next) => {
           const paper = next.papers.find((item) => item.id === paperId);
@@ -7554,12 +7601,41 @@ window.__ModuleLoader__.load({
         setToast('已保存为当前分组的默认结构');
       };
 
+      const sectionHasContent = (section) =>
+        Boolean(
+          (Array.isArray(section.entries) &&
+            section.entries.some((entry) => String(entry.text || '').trim() || String(entry.quote || '').trim())) ||
+            (Array.isArray(section.selected) && section.selected.length > 0) ||
+            section.value === true ||
+            (typeof section.value === 'number' && section.value > 0)
+        );
+
+      const templateKeysForGroups = (templates, groupIds) => {
+        const keys = new Set();
+        for (const groupId of groupIds) {
+          for (const definition of templates[groupId] || []) {
+            const key = definition.key || definition.id;
+            if (key) keys.add(key);
+          }
+        }
+        return keys;
+      };
+
       const togglePaperGroup = (paperId, groupId) => {
         mutate((next) => {
           const paper = next.papers.find((item) => item.id === paperId);
           if (!paper) return;
           if (paper.groups.includes(groupId)) {
-            paper.groups = paper.groups.filter((id) => id !== groupId);
+            const remainingGroups = paper.groups.filter((id) => id !== groupId);
+            const removableKeys = templateKeysForGroups(next.groupTemplates, [groupId]);
+            const retainedKeys = templateKeysForGroups(next.groupTemplates, remainingGroups);
+            paper.groups = remainingGroups;
+            paper.summary.sections = paper.summary.sections.filter((section) => {
+              const key = section.key || section.presetId;
+              if (!key || !removableKeys.has(key) || retainedKeys.has(key)) return true;
+              if (section.owner === 'user') return true;
+              return sectionHasContent(section);
+            });
           } else {
             paper.groups.push(groupId);
             const hidden = new Set(paper.summary.hiddenSections || []);
@@ -8062,9 +8138,6 @@ window.__ModuleLoader__.load({
                       'div',
                       { className: 'lit-claim-head' },
                       h('span', { className: 'lit-claim-index' }, `条目 ${entryIndex + 1}`),
-                      section.owner !== 'user' && (entry.quote || entry.page)
-                        ? h(StatusPill, { status: entry.status })
-                        : null,
                       h(
                         'button',
                         {
@@ -8093,6 +8166,7 @@ window.__ModuleLoader__.load({
                         entry.quote ? `“${entry.quote}”` : '尚未关联原文',
                         entry.section ? h('span', null, ` · ${entry.section}`) : null
                       ),
+                      entry.quote ? h(StatusPill, { status: entry.status }) : null,
                       h(
                         'button',
                         {
@@ -8741,7 +8815,7 @@ window.__ModuleLoader__.load({
                           : null,
                         h(
                           'div',
-                          { className: 'lit-group-menu-wrap' },
+                          { className: 'lit-group-menu-wrap', ref: groupMenuRef },
                           h(
                             'button',
                             {
@@ -8755,17 +8829,21 @@ window.__ModuleLoader__.load({
                           groupMenuOpen
                             ? h(
                                 'div',
-                                { className: 'lit-group-menu' },
-                                (state.groups || GROUPS).map((group) =>
-                                  h(
-                                    'label',
-                                    { key: group.id, className: 'lit-group-option' },
-                                    h('input', {
-                                      type: 'checkbox',
-                                      checked: selectedPaperData.groups.includes(group.id),
-                                      onChange: () => togglePaperGroup(selectedPaperData.id, group.id),
-                                    }),
-                                    h(GroupChip, { group, small: true })
+                                { className: 'lit-group-menu lit-group-menu-detail' },
+                                h(
+                                  'div',
+                                  { className: 'lit-group-options-scroll' },
+                                  (state.groups || GROUPS).map((group) =>
+                                    h(
+                                      'label',
+                                      { key: group.id, className: 'lit-group-option' },
+                                      h('input', {
+                                        type: 'checkbox',
+                                        checked: selectedPaperData.groups.includes(group.id),
+                                        onChange: () => togglePaperGroup(selectedPaperData.id, group.id),
+                                      }),
+                                      h(GroupChip, { group, small: true })
+                                    )
                                   )
                                 ),
                                 h(
@@ -8773,7 +8851,7 @@ window.__ModuleLoader__.load({
                                   {
                                     type: 'button',
                                     className: 'lit-btn lit-btn-ghost',
-                                    style: { width: '100%', marginTop: '5px' },
+                                    style: { width: '100%', marginTop: '7px' },
                                     onClick: () => setGroupMenuOpen(false),
                                   },
                                   '完成'
@@ -8943,17 +9021,6 @@ window.__ModuleLoader__.load({
                             h(Icon, { name: 'tag', size: 13 }),
                             '模板 / 预设'
                           ),
-                          h(
-                            'button',
-                            {
-                              type: 'button',
-                              className: 'lit-btn lit-btn-ghost',
-                              onClick: () => applyGroupDefaults(selectedPaperData.id),
-                              title: '把当前所有分组的默认大类合并进来',
-                            },
-                            h(Icon, { name: 'refresh', size: 13 }),
-                            '应用组默认'
-                          )
                         )
                       ),
                       (selectedPaperData.summary.sections || []).map((section, index) => renderSummarySection(section, index)),
@@ -10159,10 +10226,6 @@ window.__ModuleLoader__.load({
               onAdd: (definition, saveAsPreset) => {
                 addSectionToPaper(selectedPaperData.id, definition, saveAsPreset);
                 setToast(saveAsPreset ? '已添加并保存为预设' : '已添加自定义大类');
-              },
-              onApplyDefaults: () => {
-                applyGroupDefaults(selectedPaperData.id);
-                setTemplateOpen(false);
               },
               onSaveDefault: (groupId) => saveGroupDefault(selectedPaperData.id, groupId),
             })
