@@ -44,6 +44,10 @@ window.__ModuleLoader__.load({
 
     const NS = 'lit-demo';
     const STORAGE_KEY = 'dsh-lit-demo-v1';
+    // Settings (section presets + per-group default structure) live under their
+    // own key. Without this declaration every localStorage access raised a
+    // ReferenceError that the try/catch blocks below silently swallowed.
+    const SETTINGS_KEY = 'dsh-lit-settings-v1';
     const LAYOUT_KEY = 'dsh-lit-layout-v1';
     const AI_SEARCH_STORAGE_KEY = 'dsh-lit-ai-search-v1';
     const AUTHOR_SEARCH_STORAGE_KEY = 'dsh-lit-author-search-v1';
@@ -779,20 +783,27 @@ window.__ModuleLoader__.load({
       return mergeSettings(makeSeed());
     }
 
+    function readLocalSettings() {
+      const parsed = readStoredJson(SETTINGS_KEY, null);
+      if (!parsed || typeof parsed !== 'object') return null;
+      return {
+        sectionPresets: Array.isArray(parsed.sectionPresets) ? parsed.sectionPresets : null,
+        groupTemplates:
+          parsed.groupTemplates && typeof parsed.groupTemplates === 'object' ? parsed.groupTemplates : null,
+        savedAt: Number(parsed.savedAt) || 0,
+      };
+    }
+
+    function writeLocalSettings(settings) {
+      writeStoredJson(SETTINGS_KEY, settings);
+    }
+
     function mergeSettings(base) {
-      try {
-        const raw = window.localStorage.getItem(SETTINGS_KEY);
-        if (!raw) return base;
-        const settings = JSON.parse(raw);
-        if (Array.isArray(settings.sectionPresets) && settings.sectionPresets.length > 0) {
-          base.sectionPresets = settings.sectionPresets;
-        }
-        if (settings.groupTemplates && typeof settings.groupTemplates === 'object') {
-          base.groupTemplates = settings.groupTemplates;
-        }
-      } catch (error) {
-        // Invalid settings fall back to the defaults.
+      const local = readLocalSettings();
+      if (local && Array.isArray(local.sectionPresets) && local.sectionPresets.length > 0) {
+        base.sectionPresets = local.sectionPresets;
       }
+      if (local && local.groupTemplates) base.groupTemplates = local.groupTemplates;
       return base;
     }
 
@@ -5848,28 +5859,106 @@ window.__ModuleLoader__.load({
         }
       }, [state, dataSource]);
 
+      const settingsSaveRef = useRef({ timer: null, pending: null });
+      const lastSettingsRef = useRef(null);
+
+      const flushSettingsSave = () => {
+        const slot = settingsSaveRef.current;
+        if (slot.timer) {
+          window.clearTimeout(slot.timer);
+          slot.timer = null;
+        }
+        const pending = slot.pending;
+        if (!pending) return;
+        slot.pending = null;
+        const retry = () => {
+          if (!slot.pending) slot.pending = pending;
+        };
+        try {
+          fetch(`${LIT_DEMO_API_BASE}/api/ui-state`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ key: 'lit-settings', value: pending }),
+            keepalive: true,
+          })
+            .then((response) => {
+              if (!response.ok) retry();
+            })
+            .catch(retry);
+        } catch (error) {
+          retry();
+        }
+      };
+
+      const scheduleSettingsSave = (settings, delay = 600) => {
+        const slot = settingsSaveRef.current;
+        slot.pending = settings;
+        if (slot.timer) window.clearTimeout(slot.timer);
+        slot.timer = window.setTimeout(() => {
+          slot.timer = null;
+          flushSettingsSave();
+        }, delay);
+      };
+
       useEffect(() => {
         let cancelled = false;
         (async () => {
+          let backend = null;
+          let backendAt = 0;
           try {
             const response = await fetch(`${LIT_DEMO_API_BASE}/api/ui-state?key=lit-settings`, { cache: 'no-store' });
             const body = await response.json().catch(() => ({}));
-            if (!cancelled && response.ok && body.value && typeof body.value === 'object') {
-              setState((previous) => ({
-                ...previous,
-                sectionPresets: Array.isArray(body.value.sectionPresets) && body.value.sectionPresets.length
-                  ? body.value.sectionPresets
-                  : previous.sectionPresets,
-                groupTemplates:
-                  body.value.groupTemplates && typeof body.value.groupTemplates === 'object'
-                    ? body.value.groupTemplates
-                    : previous.groupTemplates,
-              }));
+            if (response.ok && body.value && typeof body.value === 'object') {
+              backend = body.value;
+              backendAt = Number(body.value.savedAt) || Date.parse(body.updated_at || '') || 0;
             }
           } catch (error) {
             // litd may not be running yet; local defaults are still usable.
-          } finally {
-            uiSettingsLoadedRef.current = true;
+          }
+          if (cancelled) return;
+          // Read the local copy after the request settles: edits made while it
+          // was in flight are already written there synchronously.
+          const local = readLocalSettings();
+          const localAt = local ? local.savedAt || 0 : 0;
+          const backendHasSettings = Boolean(
+            backend && (Array.isArray(backend.sectionPresets) || backend.groupTemplates)
+          );
+          uiSettingsLoadedRef.current = true;
+          if (backendHasSettings && backendAt >= localAt) {
+            const nextPresets =
+              Array.isArray(backend.sectionPresets) && backend.sectionPresets.length
+                ? backend.sectionPresets
+                : (local && local.sectionPresets) || state.sectionPresets;
+            const nextTemplates =
+              backend.groupTemplates && typeof backend.groupTemplates === 'object'
+                ? backend.groupTemplates
+                : (local && local.groupTemplates) || state.groupTemplates;
+            writeLocalSettings({
+              sectionPresets: nextPresets,
+              groupTemplates: nextTemplates,
+              savedAt: backendAt || Date.now(),
+            });
+            setState((previous) => ({
+              ...previous,
+              sectionPresets: nextPresets,
+              groupTemplates: nextTemplates,
+            }));
+            return;
+          }
+          if (local) {
+            // The local copy is the freshest one; push it so a stale backend
+            // value cannot win a later reload.
+            scheduleSettingsSave(
+              {
+                sectionPresets:
+                  local.sectionPresets && local.sectionPresets.length
+                    ? local.sectionPresets
+                    : state.sectionPresets,
+                groupTemplates: local.groupTemplates || state.groupTemplates,
+                savedAt: localAt || Date.now(),
+              },
+              0
+            );
           }
         })();
         return () => {
@@ -5878,30 +5967,51 @@ window.__ModuleLoader__.load({
       }, []);
 
       useEffect(() => {
-        if (!uiSettingsLoadedRef.current) return undefined;
-        const settings = {
+        const previous = lastSettingsRef.current;
+        lastSettingsRef.current = {
           sectionPresets: state.sectionPresets,
           groupTemplates: state.groupTemplates,
         };
-        try {
-          window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-        } catch (error) {
-          // Settings persistence is best-effort.
+        if (!previous) return;
+        if (
+          previous.sectionPresets === state.sectionPresets &&
+          previous.groupTemplates === state.groupTemplates
+        ) {
+          return;
         }
-        if (dataSource !== 'real') return undefined;
-        const timer = window.setTimeout(async () => {
-          try {
-            await fetch(`${LIT_DEMO_API_BASE}/api/ui-state`, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ key: 'lit-settings', value: settings }),
-            });
-          } catch (error) {
-            // The next edit will retry.
-          }
-        }, 500);
-        return () => window.clearTimeout(timer);
-      }, [state.sectionPresets, state.groupTemplates, dataSource]);
+        const settings = {
+          sectionPresets: state.sectionPresets,
+          groupTemplates: state.groupTemplates,
+          savedAt: Date.now(),
+        };
+        // Synchronous write: the edit survives an immediate reload even while
+        // the backend request is still debounced.
+        writeLocalSettings(settings);
+        if (!uiSettingsLoadedRef.current) return;
+        scheduleSettingsSave(settings);
+      }, [state.sectionPresets, state.groupTemplates]);
+
+      useEffect(() => {
+        if (dataSource !== 'real') return;
+        const slot = settingsSaveRef.current;
+        if (slot.pending) scheduleSettingsSave(slot.pending, 0);
+      }, [dataSource]);
+
+      useEffect(() => {
+        const flush = () => flushSettingsSave();
+        window.addEventListener('pagehide', flush);
+        window.addEventListener('beforeunload', flush);
+        const onVisibility = () => {
+          if (document.visibilityState === 'hidden') flushSettingsSave();
+        };
+        document.addEventListener('visibilitychange', onVisibility);
+        return () => {
+          window.removeEventListener('pagehide', flush);
+          window.removeEventListener('beforeunload', flush);
+          document.removeEventListener('visibilitychange', onVisibility);
+          flushSettingsSave();
+        };
+      }, []);
 
       useEffect(() => {
         try {
@@ -6091,23 +6201,29 @@ window.__ModuleLoader__.load({
             name: group.name,
             color: group.color,
           }));
-          const nextTemplates = clone(state.groupTemplates || GROUP_TEMPLATES);
-          groups.forEach((group) => {
-            if (!nextTemplates[group.id]) {
-              nextTemplates[group.id] = ['question', 'findings', 'limitations', 'my-note']
-                .map((id) => SECTION_PRESET_MAP[id])
-                .filter(Boolean)
-                .map((preset) => templateFromPreset(preset));
-            }
-          });
           paperHashesRef.current = Object.fromEntries(papers.map((paper) => [paper.id, hashPaper(paper)]));
           setRealSaveState('saved');
-          setState((previous) => ({
-            ...previous,
-            papers,
-            groups: Array.isArray(data.groups) ? groups : previous.groups,
-            groupTemplates: nextTemplates,
-          }));
+          setState((previous) => {
+            // Merge against the latest settings: a snapshot taken when this
+            // request started must not overwrite edits made while it ran (the
+            // group-default structure used to revert when /api/library resolved
+            // after /api/ui-state).
+            const nextTemplates = clone(previous.groupTemplates || GROUP_TEMPLATES);
+            groups.forEach((group) => {
+              if (!nextTemplates[group.id]) {
+                nextTemplates[group.id] = ['question', 'findings', 'limitations', 'my-note']
+                  .map((id) => SECTION_PRESET_MAP[id])
+                  .filter(Boolean)
+                  .map((preset) => templateFromPreset(preset));
+              }
+            });
+            return {
+              ...previous,
+              papers,
+              groups: Array.isArray(data.groups) ? groups : previous.groups,
+              groupTemplates: nextTemplates,
+            };
+          });
           const firstId = papers[0]?.id || '';
           setDataSource('real');
           setTab('library');
