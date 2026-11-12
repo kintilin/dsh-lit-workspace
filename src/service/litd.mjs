@@ -11,6 +11,7 @@ import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mj
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DSH_WEB_URL = process.env.DSH_WEB_URL || 'http://127.0.0.1:49422';
+const AI_SETTINGS_KEY = 'lit-settings';
 const dataDir = process.env.LITD_DATA_DIR
   ? path.resolve(process.env.LITD_DATA_DIR)
   : path.join(here, 'data');
@@ -619,6 +620,38 @@ function buildAutoSummary(extracted) {
   return { sections, evidence, auto_generated: true };
 }
 
+let aiCriteriaCache = { at: 0, value: { summary: '', scoring: '' } };
+
+function invalidateAiCriteriaCache() {
+  aiCriteriaCache = { at: 0, value: { summary: '', scoring: '' } };
+}
+
+// AI summary/scoring standards are edited by the client and stored in the
+// lit-settings ui-state row. Empty values fall back to the built-in defaults
+// in the host plugin.
+function getAiCriteria() {
+  const now = Date.now();
+  if (aiCriteriaCache.at && now - aiCriteriaCache.at < 10000) return aiCriteriaCache.value;
+  let value = { summary: '', scoring: '' };
+  try {
+    const row = db.prepare('SELECT value FROM ui_state WHERE key = ?').get(AI_SETTINGS_KEY);
+    if (row && row.value) {
+      const settings = JSON.parse(row.value);
+      const criteria = settings && typeof settings.aiCriteria === 'object' ? settings.aiCriteria : null;
+      if (criteria) {
+        value = {
+          summary: String(criteria.summary || '').trim().slice(0, 4000),
+          scoring: String(criteria.scoring || '').trim().slice(0, 4000),
+        };
+      }
+    }
+  } catch (error) {
+    // Fall back to the built-in defaults if the settings row is unreadable.
+  }
+  aiCriteriaCache = { at: now, value };
+  return value;
+}
+
 async function generateModelSummary(row) {
   const pages = JSON.parse(row.pages_json || '[]');
   const selectPages = (limit) => {
@@ -644,6 +677,7 @@ async function generateModelSummary(row) {
         authors: row.authors,
         abstract: row.abstract,
         pages: selectedPages,
+        criteria: getAiCriteria(),
       }),
       signal: AbortSignal.timeout(150000),
     });
@@ -2737,6 +2771,7 @@ async function restoreFromArchive(buffer) {
 
     db = new DatabaseSync(path.join(dataDir, 'library.db'));
     db.exec('PRAGMA journal_mode = WAL');
+    invalidateAiCriteriaCache();
     ensureSortOrderColumns();
     invalidateJcrCache();
     syncTagLibrary();
@@ -2910,7 +2945,7 @@ async function authorDigest(authorName, works, onProgress) {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       signal: AbortSignal.timeout(180000),
-      body: JSON.stringify({ query: `作者 ${authorName || ''} 的论文`, items, mode: 'all' }),
+      body: JSON.stringify({ query: `作者 ${authorName || ''} 的论文`, items, mode: 'all', criteria: getAiCriteria() }),
     });
     const body = await response.json();
     if (!response.ok || body.ok !== true) throw new Error(body.error || `host HTTP ${response.status}`);
@@ -3083,6 +3118,7 @@ async function aiSearch(query, requestedSources, page = 1, excludeExisting = fal
       query: clean,
       items: selected,
       ...(pageNumber > 1 ? { mode: 'all' } : {}),
+      criteria: getAiCriteria(),
     }),
   });
   const body = await response.json();
@@ -3346,6 +3382,7 @@ const server = http.createServer(async (req, res) => {
         `INSERT INTO ui_state (key, value, updated_at) VALUES (?, ?, ?)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
       ).run(key, JSON.stringify(body.value), new Date().toISOString());
+      if (key === AI_SETTINGS_KEY) invalidateAiCriteriaCache();
       return send(res, 200, { ok: true });
     }
     if (req.method === 'POST' && /^\/api\/papers\/[^/]+\/enrich-metadata$/.test(url.pathname)) {
@@ -3737,6 +3774,7 @@ const server = http.createServer(async (req, res) => {
               source: row.feed_title || '',
               kind: row.kind || '',
             })),
+            criteria: getAiCriteria(),
           }),
         });
         const bodyJson = await response.json();

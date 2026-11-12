@@ -14,11 +14,10 @@ const AUTHOR_NORMALIZE_ROUTE = '/lit-model/author-normalize';
 const LITD_URL = process.env.LITD_URL || 'http://127.0.0.1:8765';
 const MAX_BODY = 5 * 1024 * 1024;
 const MAX_PROMPT_CHARS = 90000;
+const CRITERIA_ROUTE = '/lit-model/criteria-defaults';
+const MAX_CRITERIA_CHARS = 4000;
 
-const SCREEN_SYSTEM = `你是一名严谨的文献筛选助手。你要判断每条新增文献/资讯是否值得研究者关注，并按“新颖性”给 1–5 星。
-你不是在总结论文，而是在做新颖性初筛。
-
-评分标准：
+const DEFAULT_SCORING_CRITERIA = `评分标准：
 5 星：提出此前未知的新机制、新元件类型、新原理或新概念，并有明确实验/分析支持，具有普遍意义。
 4 星：明确的新发现或新方法，有较强证据，但适用范围或普适性有限。
 3 星：有增量新意，或把已有机制扩展到新体系；也可能是有价值的新资源。
@@ -30,7 +29,10 @@ const SCREEN_SYSTEM = `你是一名严谨的文献筛选助手。你要判断每
 - 新闻/评论最高 1 星。
 - 没有摘要或只有标题时仍然可以给高分：不要仅因为缺少摘要扣星，但必须降低 confidence，并在 why_not_higher 中说明“信息有限”。
 - 不要因为期刊、影响因子或作者名气给高分。
-- 必须说明“为什么不是更高一星”。
+- 必须说明“为什么不是更高一星”。`;
+
+const SCREEN_SYSTEM = `你是一名严谨的文献筛选助手。你要判断每条新增文献/资讯是否值得研究者关注，并按“新颖性”给 1–5 星。
+你不是在总结论文，而是在做新颖性初筛。
 
 只输出一个 JSON 对象，不要 Markdown 代码围栏，不要解释：
 {
@@ -98,7 +100,7 @@ const DIGEST_SYSTEM = `你是研究检索助手。用户会给出一个检索需
 要求：
 - 只返回真正相关的候选；没有相关条目就返回空 cards。
 - summary 用中文，具体，不要空话。
-- stars 是 1-5 的新颖性评分：5 = 新机制/新元件/新原理；2 = 资源/数据集/描述型；1 = 新闻/评论。
+- stars 是 1-5 的新颖性评分，按“评分标准”判断。
 - 不要输出输入中不存在的论文。
 - 不要输出 JSON 之外的任何字符。`;
 
@@ -121,7 +123,7 @@ const ALL_DIGEST_SYSTEM = `你是文献卡片编辑。用户会给出一个作�
 要求：
 - 必须为每个输入 id 返回一张卡。
 - 摘要必须基于输入的标题和摘要，不补充外部知识，不编造。
-- stars 是 1-5 的新颖性评分：5 = 新机制；2 = 资源型；1 = 新闻/评论。
+- stars 是 1-5 的新颖性评分，按“评分标准”判断。
 - summary 控制在 80 字以内。
 - 不要输出 JSON 之外的任何字符。`;
 
@@ -154,6 +156,10 @@ function buildScreenPrompt(payload) {
 ${JSON.stringify(items, null, 2)}`;
 }
 
+const DEFAULT_SUMMARY_CRITERIA = `- 只根据论文文本总结：不补充外部知识，不编造数字、结论或引文。
+- 面向科研阅读，写清研究问题/假设、方法与范围（设计、材料、数据或综述范围）、相互独立的主要发现、作者明确承认的局限（没有就写“作者未明确讨论局限”）和核心结论/主张。
+- text 用中文，尽量具体，不要空话；每条不超过 120 字。`;
+
 const SYSTEM = `你是一名严谨的文献总结助手。你只根据用户给出的论文文本总结，不补充外部知识，不编造数字、结论或引文。
 输出必须是单个 JSON 对象，不要 Markdown 代码围栏，不要解释。
 
@@ -179,10 +185,21 @@ JSON 结构：
 5. key="conclusion", title="结论"：1 条，说明作者的核心结论/主张。
 
 硬性要求：
-- text 用中文，尽量具体，不要空话；每条不超过 120 字。
 - quote 必须是输入文本中逐字连续的英文片段；宁可留空，也不要改写或拼接；每条不超过 180 字符。
 - 不要输出 page 字段；页码由系统定位。
 - 不要输出 JSON 之外的任何字符。`;
+
+function customCriteria(payload, key) {
+  const criteria = payload && typeof payload.criteria === 'object' ? payload.criteria : null;
+  const value = criteria && typeof criteria[key] === 'string' ? criteria[key] : '';
+  return value.replace(/\r\n?/g, '\n').trim().slice(0, MAX_CRITERIA_CHARS);
+}
+
+function systemWithCriteria(base, heading, custom, fallback) {
+  const text = custom || String(fallback || '').trim();
+  if (!text) return base;
+  return `${base}\n\n${heading}\n${text}`;
+}
 
 function sendJson(res, status, payload) {
   const body = JSON.stringify(payload);
@@ -448,6 +465,12 @@ export function apply(ctx, config = {}) {
         if (!selection?.provider || !selection?.model) {
           throw new Error('no default model selection is configured');
         }
+        const summarySystem = systemWithCriteria(
+          SYSTEM,
+          '用户自定义的总结标准（在满足上面的输出格式与引文要求的前提下优先遵循）：',
+          customCriteria(payload, 'summary'),
+          DEFAULT_SUMMARY_CRITERIA
+        );
         const callModel = async (prompt) => {
           const controller = new AbortController();
           timer = setTimeout(() => controller.abort(), 120000);
@@ -459,7 +482,7 @@ export function apply(ctx, config = {}) {
             ...(selection.reasoningEffort ? { reasoningEffort: selection.reasoningEffort } : {}),
             temperature: 0.2,
             maxTokens: 8000,
-            system: SYSTEM,
+            system: summarySystem,
             messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
             signal: controller.signal,
           });
@@ -522,6 +545,13 @@ export function apply(ctx, config = {}) {
         const items = Array.isArray(payload.items) ? payload.items.slice(0, 40) : [];
         if (items.length === 0) throw new Error('items required');
         const prompt = buildScreenPrompt({ ...payload, items });
+
+        const scoringSystem = systemWithCriteria(
+          SCREEN_SYSTEM,
+          '评分标准（用户自定义；仍然只输出上面的 JSON，stars 必须是 1-5 的整数）：',
+          customCriteria(payload, 'scoring'),
+          DEFAULT_SCORING_CRITERIA
+        );
         const selection = ctx.agentDefaultModel.currentSelection();
         if (!selection?.provider || !selection?.model) {
           throw new Error('no default model selection is configured');
@@ -536,7 +566,7 @@ export function apply(ctx, config = {}) {
           ...(selection.reasoningEffort ? { reasoningEffort: selection.reasoningEffort } : {}),
           temperature: 0.1,
           maxTokens: 5000,
-          system: SCREEN_SYSTEM,
+          system: scoringSystem,
           messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
           signal: controller.signal,
         });
@@ -618,7 +648,12 @@ export function apply(ctx, config = {}) {
           ...(selection.reasoningEffort ? { reasoningEffort: selection.reasoningEffort } : {}),
           temperature: 0.2,
           maxTokens: payload.mode === 'all' ? 8000 : 4500,
-          system: payload.mode === 'all' ? ALL_DIGEST_SYSTEM : DIGEST_SYSTEM,
+          system: systemWithCriteria(
+            payload.mode === 'all' ? ALL_DIGEST_SYSTEM : DIGEST_SYSTEM,
+            '评分标准（用户自定义；仍然只输出上面的 JSON）：',
+            customCriteria(payload, 'scoring'),
+            DEFAULT_SCORING_CRITERIA
+          ),
           messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
           signal: controller.signal,
         });
@@ -784,4 +819,30 @@ export function apply(ctx, config = {}) {
     },
   });
   ctx.effect(() => normalizeRoute);
+
+  const criteriaRoute = ctx.webServer.register({
+    kind: 'exact',
+    path: CRITERIA_ROUTE,
+    handler: async (req, res) => {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'access-control-allow-origin': '*',
+          'access-control-allow-methods': 'GET,OPTIONS',
+          'access-control-allow-headers': 'content-type',
+        });
+        res.end();
+        return;
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { ok: false, error: 'GET required' });
+        return;
+      }
+      sendJson(res, 200, {
+        ok: true,
+        summary: DEFAULT_SUMMARY_CRITERIA,
+        scoring: DEFAULT_SCORING_CRITERIA,
+      });
+    },
+  });
+  ctx.effect(() => criteriaRoute);
 }

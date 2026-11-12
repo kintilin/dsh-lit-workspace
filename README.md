@@ -6,7 +6,7 @@ DeepSeek Harness 的本地文献工作台。
 
 - 本地文献库、PDF 导入与全文提取
 - 为只有元数据的文献补充 PDF
-- AI 总结、AI 新颖性评分
+- AI 总结、AI 新颖性评分（标准可在「设置 → AI 标准」中自定义，内置默认标准会标注为可修改）
 - RSS 追踪、OPML 导入导出
 - AI 检索：Europe PMC、bioRxiv、arXiv、OpenAlex、Crossref、Semantic Scholar
 - 作者检索：姓名 + 单位 → 作者候选 → 近年论文

@@ -49,6 +49,9 @@ window.__ModuleLoader__.load({
     // ReferenceError that the try/catch blocks below silently swallowed.
     const SETTINGS_KEY = 'dsh-lit-settings-v1';
     const LAYOUT_KEY = 'dsh-lit-layout-v1';
+    const AI_TIP_KEY = 'dsh-lit-ai-criteria-tip-v1';
+    const AI_CRITERIA_DEFAULTS_ROUTE = '/lit-model/criteria-defaults';
+    const EMPTY_AI_CRITERIA = { summary: '', scoring: '', customized: false };
     const AI_SEARCH_STORAGE_KEY = 'dsh-lit-ai-search-v1';
     const AUTHOR_SEARCH_STORAGE_KEY = 'dsh-lit-author-search-v1';
 
@@ -746,6 +749,7 @@ window.__ModuleLoader__.load({
         schedule,
         sectionPresets: clone(SECTION_PRESETS),
         groupTemplates: clone(GROUP_TEMPLATES),
+        aiCriteria: { ...EMPTY_AI_CRITERIA },
         budgetUsed: 78000,
         budgetLimit: 200000,
         aiPaused: false,
@@ -790,6 +794,14 @@ window.__ModuleLoader__.load({
         sectionPresets: Array.isArray(parsed.sectionPresets) ? parsed.sectionPresets : null,
         groupTemplates:
           parsed.groupTemplates && typeof parsed.groupTemplates === 'object' ? parsed.groupTemplates : null,
+        aiCriteria:
+          parsed.aiCriteria && typeof parsed.aiCriteria === 'object'
+            ? {
+                summary: String(parsed.aiCriteria.summary || ''),
+                scoring: String(parsed.aiCriteria.scoring || ''),
+                customized: Boolean(parsed.aiCriteria.customized),
+              }
+            : null,
         savedAt: Number(parsed.savedAt) || 0,
       };
     }
@@ -804,6 +816,10 @@ window.__ModuleLoader__.load({
         base.sectionPresets = local.sectionPresets;
       }
       if (local && local.groupTemplates) base.groupTemplates = local.groupTemplates;
+      if (local && local.aiCriteria) base.aiCriteria = { ...EMPTY_AI_CRITERIA, ...local.aiCriteria };
+      if (!base.aiCriteria || typeof base.aiCriteria !== 'object') {
+        base.aiCriteria = { ...EMPTY_AI_CRITERIA };
+      }
       return base;
     }
 
@@ -2766,12 +2782,14 @@ window.__ModuleLoader__.load({
       presets,
       groups,
       groupTemplates,
+      aiCriteria,
       onTabChange,
       onClose,
       onAddPreset,
       onUpdatePreset,
       onDeletePreset,
       onToggleGroupPreset,
+      onAiCriteriaChange,
     }) {
       const [newPreset, setNewPreset] = useState({ title: '', type: 'text', hint: '', options: '' });
       const [editId, setEditId] = useState(null);
@@ -2787,6 +2805,32 @@ window.__ModuleLoader__.load({
       const [backupError, setBackupError] = useState('');
       const [restoreFile, setRestoreFile] = useState(null);
       const [restoreBusy, setRestoreBusy] = useState(false);
+      const [criteriaDefaults, setCriteriaDefaults] = useState(null);
+      const [criteriaError, setCriteriaError] = useState('');
+      const [summaryDraft, setSummaryDraft] = useState(null);
+      const [scoringDraft, setScoringDraft] = useState(null);
+
+      useEffect(() => {
+        let cancelled = false;
+        (async () => {
+          try {
+            const response = await fetch(AI_CRITERIA_DEFAULTS_ROUTE, { cache: 'no-store' });
+            const body = await response.json();
+            if (!response.ok || body.ok !== true) throw new Error(body.error || `HTTP ${response.status}`);
+            if (cancelled) return;
+            setCriteriaDefaults({
+              summary: String(body.summary || ''),
+              scoring: String(body.scoring || ''),
+            });
+            setCriteriaError('');
+          } catch (error) {
+            if (!cancelled) setCriteriaError(error.message);
+          }
+        })();
+        return () => {
+          cancelled = true;
+        };
+      }, []);
 
       const loadBackups = async () => {
         try {
@@ -2983,7 +3027,7 @@ window.__ModuleLoader__.load({
               null,
               h('div', { className: 'lit-eyebrow' }, 'WORKSPACE · SETTINGS'),
               h('h2', { className: 'lit-modal-title' }, '设置'),
-              h('div', { className: 'lit-modal-sub', style: { margin: '6px 0 0' } }, '预设大类、分组默认结构和本地影响因子表。设置保存在当前 DSH profile。')
+              h('div', { className: 'lit-modal-sub', style: { margin: '6px 0 0' } }, '预设大类、分组默认结构、AI 标准和本地影响因子表。设置保存在当前 DSH profile。')
             ),
             h('button', { className: 'lit-icon-btn', type: 'button', title: '关闭', onClick: onClose }, h(Icon, { name: 'x', size: 16 }))
           ),
@@ -2994,6 +3038,11 @@ window.__ModuleLoader__.load({
               'button',
               { type: 'button', className: tab === 'presets' ? 'lit-settings-tab active' : 'lit-settings-tab', onClick: () => onTabChange('presets') },
               '结构化总结预设'
+            ),
+            h(
+              'button',
+              { type: 'button', className: tab === 'ai' ? 'lit-settings-tab active' : 'lit-settings-tab', onClick: () => onTabChange('ai') },
+              'AI 标准'
             ),
             h(
               'button',
@@ -3336,6 +3385,92 @@ window.__ModuleLoader__.load({
                   )
                 ),
                 h('div', { className: 'lit-settings-note' }, '恢复前建议再下载一次当前备份。')
+              )
+            : tab === 'ai'
+              ? h(
+                'div',
+                { className: 'lit-settings-body' },
+                h('div', { className: 'lit-settings-section-title' }, 'AI 总结标准'),
+                h(
+                  'div',
+                  { className: 'lit-settings-note' },
+                  '用于「AI 总结」：输出 JSON 结构和引文定位要求固定不变，这里写你希望总结关注的内容和写法。留空使用内置默认标准。'
+                ),
+                h('textarea', {
+                  className: 'lit-textarea lit-ai-criteria-input',
+                  rows: 8,
+                  spellCheck: false,
+                  value:
+                    summaryDraft !== null
+                      ? summaryDraft
+                      : aiCriteria?.summary
+                        ? aiCriteria.summary
+                        : (criteriaDefaults && criteriaDefaults.summary) || '',
+                  onChange: (event) => {
+                    setSummaryDraft(event.target.value);
+                    onAiCriteriaChange({ summary: event.target.value });
+                  },
+                }),
+                h(
+                  'div',
+                  { className: 'lit-settings-edit-actions', style: { marginTop: '6px' } },
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'lit-btn lit-btn-ghost',
+                      onClick: () => {
+                        setSummaryDraft(null);
+                        onAiCriteriaChange({ summary: '' });
+                      },
+                    },
+                    '恢复内置默认'
+                  ),
+                  criteriaDefaults ? null : h('span', { className: 'lit-settings-note' }, '正在加载内置默认标准…')
+                ),
+                h('div', { className: 'lit-settings-section-title', style: { marginTop: '18px' } }, 'AI 评分标准'),
+                h(
+                  'div',
+                  { className: 'lit-settings-note' },
+                  '用于 RSS 新颖性评分和作者检索卡片的 1–5 星评分。留空使用内置默认标准。'
+                ),
+                h('textarea', {
+                  className: 'lit-textarea lit-ai-criteria-input',
+                  rows: 10,
+                  spellCheck: false,
+                  value:
+                    scoringDraft !== null
+                      ? scoringDraft
+                      : aiCriteria?.scoring
+                        ? aiCriteria.scoring
+                        : (criteriaDefaults && criteriaDefaults.scoring) || '',
+                  onChange: (event) => {
+                    setScoringDraft(event.target.value);
+                    onAiCriteriaChange({ scoring: event.target.value });
+                  },
+                }),
+                h(
+                  'div',
+                  { className: 'lit-settings-edit-actions', style: { marginTop: '6px' } },
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'lit-btn lit-btn-ghost',
+                      onClick: () => {
+                        setScoringDraft(null);
+                        onAiCriteriaChange({ scoring: '' });
+                      },
+                    },
+                    '恢复内置默认'
+                  )
+                ),
+                h(
+                  'div',
+                  { className: 'lit-settings-note', style: { marginTop: '10px' } },
+                  '自定义标准会用于之后的 AI 总结和评分调用（已生成的内容不会自动重算）。设置保存在当前 DSH profile，并会在本机浏览器中同步。'
+                ),
+                criteriaError ? h('div', { className: 'lit-settings-error' }, `加载内置默认标准失败：${criteriaError}`) : null
               )
             : null
         )
@@ -5296,6 +5431,7 @@ window.__ModuleLoader__.load({
       .lit-settings-tab.active { color: var(--dsw-alias-brand-primary, #9fd0ff); border-bottom-color: var(--dsw-alias-brand-primary, #72b7ff); }
       .lit-settings-body { overflow: auto; padding: 12px 2px 2px; }
       .lit-settings-section-title { font-size: 11px; font-weight: 650; color: var(--dsw-alias-label-primary, #e8eef5); margin-bottom: 6px; }
+      .lit-ai-criteria-input { width: 100%; min-height: 120px; margin-top: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10.5px; line-height: 1.55; resize: vertical; box-sizing: border-box; }
       .lit-settings-edit { display: flex; flex-direction: column; gap: 6px; width: 100%; }
       .lit-settings-edit .lit-input, .lit-settings-edit .lit-select { margin-top: 0; padding-left: 9px; }
       .lit-settings-edit-actions { display: flex; gap: 6px; }
@@ -5645,6 +5781,8 @@ window.__ModuleLoader__.load({
       const [templateOpen, setTemplateOpen] = useState(false);
       const [settingsOpen, setSettingsOpen] = useState(false);
       const [settingsTab, setSettingsTab] = useState('presets');
+      const [aiCriteriaLoaded, setAiCriteriaLoaded] = useState(false);
+      const [aiCriteriaTipOpen, setAiCriteriaTipOpen] = useState(false);
       const [feedsOpen, setFeedsOpen] = useState(false);
       const [feedsData, setFeedsData] = useState({ feeds: [], items: [] });
       const [feedsLoading, setFeedsLoading] = useState(false);
@@ -5934,7 +6072,8 @@ window.__ModuleLoader__.load({
           const local = readLocalSettings();
           const localAt = local ? local.savedAt || 0 : 0;
           const backendHasSettings = Boolean(
-            backend && (Array.isArray(backend.sectionPresets) || backend.groupTemplates)
+            backend &&
+              (Array.isArray(backend.sectionPresets) || backend.groupTemplates || backend.aiCriteria)
           );
           uiSettingsLoadedRef.current = true;
           if (backendHasSettings && backendAt >= localAt) {
@@ -5946,16 +6085,23 @@ window.__ModuleLoader__.load({
               backend.groupTemplates && typeof backend.groupTemplates === 'object'
                 ? backend.groupTemplates
                 : (local && local.groupTemplates) || state.groupTemplates;
+            const nextCriteria =
+              backend.aiCriteria && typeof backend.aiCriteria === 'object'
+                ? { ...EMPTY_AI_CRITERIA, ...backend.aiCriteria }
+                : (local && local.aiCriteria) || { ...EMPTY_AI_CRITERIA };
             writeLocalSettings({
               sectionPresets: nextPresets,
               groupTemplates: nextTemplates,
+              aiCriteria: nextCriteria,
               savedAt: backendAt || Date.now(),
             });
             setState((previous) => ({
               ...previous,
               sectionPresets: nextPresets,
               groupTemplates: nextTemplates,
+              aiCriteria: nextCriteria,
             }));
+            setAiCriteriaLoaded(true);
             return;
           }
           if (local) {
@@ -5968,11 +6114,13 @@ window.__ModuleLoader__.load({
                     ? local.sectionPresets
                     : state.sectionPresets,
                 groupTemplates: local.groupTemplates || state.groupTemplates,
+                aiCriteria: local.aiCriteria || state.aiCriteria || { ...EMPTY_AI_CRITERIA },
                 savedAt: localAt || Date.now(),
               },
               0
             );
           }
+          setAiCriteriaLoaded(true);
         })();
         return () => {
           cancelled = true;
@@ -5984,17 +6132,20 @@ window.__ModuleLoader__.load({
         lastSettingsRef.current = {
           sectionPresets: state.sectionPresets,
           groupTemplates: state.groupTemplates,
+          aiCriteria: state.aiCriteria,
         };
         if (!previous) return;
         if (
           previous.sectionPresets === state.sectionPresets &&
-          previous.groupTemplates === state.groupTemplates
+          previous.groupTemplates === state.groupTemplates &&
+          previous.aiCriteria === state.aiCriteria
         ) {
           return;
         }
         const settings = {
           sectionPresets: state.sectionPresets,
           groupTemplates: state.groupTemplates,
+          aiCriteria: state.aiCriteria,
           savedAt: Date.now(),
         };
         // Synchronous write: the edit survives an immediate reload even while
@@ -6002,13 +6153,47 @@ window.__ModuleLoader__.load({
         writeLocalSettings(settings);
         if (!uiSettingsLoadedRef.current) return;
         scheduleSettingsSave(settings);
-      }, [state.sectionPresets, state.groupTemplates]);
+      }, [state.sectionPresets, state.groupTemplates, state.aiCriteria]);
 
       useEffect(() => {
         if (dataSource !== 'real') return;
         const slot = settingsSaveRef.current;
         if (slot.pending) scheduleSettingsSave(slot.pending, 0);
       }, [dataSource]);
+
+      const updateAiCriteria = (patch) => {
+        mutate((next) => {
+          const current = next.aiCriteria || EMPTY_AI_CRITERIA;
+          const merged = { ...current, ...patch };
+          const summary = String(merged.summary || '');
+          const scoring = String(merged.scoring || '');
+          next.aiCriteria = {
+            summary,
+            scoring,
+            customized: Boolean(summary.trim() || scoring.trim()),
+          };
+        });
+      };
+
+      const dismissAiCriteriaTip = () => {
+        setAiCriteriaTipOpen(false);
+        try {
+          window.localStorage.setItem(AI_TIP_KEY, '1');
+        } catch (error) {
+          // Dismissal is best-effort; the reminder only shows once per browser.
+        }
+      };
+
+      useEffect(() => {
+        if (!aiCriteriaLoaded) return;
+        if (state.aiCriteria && state.aiCriteria.customized) return;
+        try {
+          if (window.localStorage.getItem(AI_TIP_KEY)) return;
+        } catch (error) {
+          // localStorage is best-effort; still show the first-use reminder.
+        }
+        setAiCriteriaTipOpen(true);
+      }, [aiCriteriaLoaded, state.aiCriteria]);
 
       useEffect(() => {
         const flush = () => flushSettingsSave();
@@ -10168,7 +10353,7 @@ window.__ModuleLoader__.load({
             ),
             h(
               'button',
-              { type: 'button', className: 'lit-btn lit-btn-ghost', onClick: () => setSettingsOpen(true), title: '设置预设与影响因子表' },
+              { type: 'button', className: 'lit-btn lit-btn-ghost', onClick: () => setSettingsOpen(true), title: '设置预设、AI 标准与影响因子表' },
               h(Icon, { name: 'settings', size: 14 }),
               '设置'
             )
@@ -10401,12 +10586,64 @@ window.__ModuleLoader__.load({
               },
             })
           : null,
+        aiCriteriaTipOpen
+          ? h(
+              'div',
+              {
+                className: 'lit-modal-backdrop',
+                role: 'presentation',
+                onMouseDown: (event) => {
+                  if (event.target === event.currentTarget) dismissAiCriteriaTip();
+                },
+              },
+              h(
+                'div',
+                {
+                  className: 'lit-modal lit-confirm-modal',
+                  role: 'dialog',
+                  'aria-modal': 'true',
+                  'aria-label': 'AI 标准提醒',
+                },
+                h('div', { className: 'lit-eyebrow' }, 'AI 标准'),
+                h('h2', { className: 'lit-modal-title' }, '先按你的研究方向定一下 AI 标准'),
+                h(
+                  'div',
+                  { className: 'lit-modal-sub' },
+                  'AI 总结和 AI 评分目前使用内置的通用标准。不同课题对“好总结”和“新颖性”的判断差别很大，建议第一次使用时在「设置 → AI 标准」里改成适合你的标准；留空则继续使用内置默认值。'
+                ),
+                h(
+                  'div',
+                  { className: 'lit-modal-actions' },
+                  h(
+                    'button',
+                    { type: 'button', className: 'lit-btn lit-btn-ghost', onClick: dismissAiCriteriaTip },
+                    '先使用默认标准'
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'lit-btn lit-btn-primary',
+                      onClick: () => {
+                        dismissAiCriteriaTip();
+                        setSettingsTab('ai');
+                        setSettingsOpen(true);
+                      },
+                    },
+                    '去设置 AI 标准'
+                  )
+                )
+              )
+            )
+          : null,
         settingsOpen
           ? h(SettingsModal, {
               tab: settingsTab,
               presets: state.sectionPresets,
               groups: state.groups,
               groupTemplates: state.groupTemplates,
+              aiCriteria: state.aiCriteria,
+              onAiCriteriaChange: updateAiCriteria,
               onTabChange: setSettingsTab,
               onClose: () => setSettingsOpen(false),
               onAddPreset: addSectionPreset,

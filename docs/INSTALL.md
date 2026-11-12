@@ -1,9 +1,9 @@
-# dsh-lit 1.0.0 试用包
+# dsh-lit 1.1.0 试用包
 
 这是 DSH 文献工作台的完整安装包，包含：
 
 - 文献库、PDF 导入/关联
-- AI 总结、AI 新颖性评分
+- AI 总结、AI 新颖性评分（首次使用会提醒到「设置 → AI 标准」按研究方向调整）
 - RSS 追踪、OPML 导入导出
 - AI 检索：Europe PMC / bioRxiv / arXiv / OpenAlex / Crossref / Semantic Scholar
 - 作者检索：姓名 + 单位 → 作者候选 → 近年论文
@@ -21,17 +21,17 @@
 2. 在 DSH 里让 Agent 执行：
 
 ```text
-plugin_manager install_bundle <本目录绝对路径>\dsh-lit-1.0.0.tgz
+plugin_manager install_bundle <本目录绝对路径>\dsh-lit-1.1.0.tgz
 ```
 
 例如：
 
 ```text
-plugin_manager install_bundle C:\Users\you\Downloads\dsh-lit-release\dsh-lit-1.0.0.tgz
+plugin_manager install_bundle C:\Users\you\Downloads\dsh-lit-release\dsh-lit-1.1.0.tgz
 ```
 
 如果使用 DSH 插件管理界面，选择本地安装并指向
-`dsh-lit-1.0.0.tgz`。
+`dsh-lit-1.1.0.tgz`。
 
 3. 安装完成后完整退出并重新打开 DSH。
 4. 打开“文献工作台”。
