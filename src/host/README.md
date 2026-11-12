@@ -44,7 +44,7 @@ Already installed in the current profile as `@local/lit-model`.
 For another profile:
 
 ```text
-plugin_manager install_bundle E:\DSH_Workspace\lit-model-plugin
+plugin_manager install_bundle <repo>/src/host
 ```
 
 ## Notes

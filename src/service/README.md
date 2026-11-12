@@ -5,7 +5,7 @@
 ## 启动
 
 ```powershell
-cd E:\DSH_Workspace\lit\service
+cd src/service
 node litd.mjs
 ```
 
@@ -23,7 +23,7 @@ DSH_WEB_URL=http://127.0.0.1:<DSH Web 端口>
 
 `start-litd.cmd` 会优先使用 `DSH_NODE`，否则查找 PATH 中的 `node`。
 
-首次启动时，如果数据库为空且本机存在 `D:\Desktop\未读文献\2021_ARB_同义突变综述.pdf`，会自动导入这篇测试论文，并挂载 `../p0/out/summary.revised.json` 的总结与 18 条证据。
+首次启动时会自动建表；不会导入任何示例论文。
 
 ## API
 
@@ -66,7 +66,7 @@ DSH_WEB_URL=http://127.0.0.1:<DSH Web 端口>
 | POST | `/api/discover/import-metadata` | 没有开放 PDF 时保存元数据 + 摘要，状态为 `未总结` |
 | GET | `/api/papers/:id/pages` | 逐页文本、item、bbox |
 | GET | `/api/papers/:id/pdf` | 返回 PDF 字节，供 iframe 预览 |
-| POST | `/api/import` | `{ "path": "D:\\...pdf", "auto_summary": true }` 从本机路径导入 PDF |
+| POST | `/api/import` | `{ "path": "<本机 PDF 绝对路径>", "auto_summary": true }` 从本机路径导入 PDF |
 | POST | `/api/import-upload?filename=...` | 原始 PDF bytes 上传导入（拖拽/文件选择用） |
 | POST | `/api/open` | `{ "paper_id": "..." }` 调用系统默认 PDF 阅读器；`dry_run:true` 只验证路径 |
 | POST | `/api/locate` | `{ "paper_id": "...", "quote": "..." }` 定位引文 |
@@ -169,7 +169,7 @@ litd 默认每 24 小时自动创建一份备份，保留最近 12 份。用 `LI
 - 失败时返回 502，不改动原总结
 - 前端只在没有 `AI 总结` 的文献上显示“AI 总结”按钮
 
-Host 插件源码：`E:\DSH_Workspace\lit-model-plugin`。服务通过 `DSH_WEB_URL`（默认 `http://127.0.0.1:49422`）访问 host route。
+Host 插件源码：`src/host`。服务通过 `DSH_WEB_URL`（默认 `http://127.0.0.1:49422`）访问 host route。
 
 ## DSH 插件
 

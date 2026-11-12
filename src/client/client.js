@@ -4066,7 +4066,7 @@ window.__ModuleLoader__.load({
               className: 'lit-input',
               value: path,
               onChange: (event) => onPathChange(event.target.value),
-              placeholder: 'D:\\Desktop\\未读文献\\paper.pdf',
+              placeholder: '本机 PDF 的完整路径',
               disabled: busy || Boolean(file),
             }),
             h('div', { className: 'lit-import-note' }, '路径导入同样会复制到 library storage，而不是只记录原位置。'),
@@ -4075,7 +4075,7 @@ window.__ModuleLoader__.load({
               className: 'lit-input',
               value: summaryPath,
               onChange: (event) => onSummaryChange(event.target.value),
-              placeholder: 'E:\\...\\summary.revised.json',
+              placeholder: '可选：总结 JSON 的完整路径',
               disabled: busy,
             }),
             h('div', { className: 'lit-import-note' }, '只导入 PDF 时可以留空；之后再由 Agent 或你补总结。')
@@ -5159,6 +5159,7 @@ window.__ModuleLoader__.load({
         background-color: var(--dsw-alias-bg-layer-2, #1c2834);
         background-image: linear-gradient(var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-2, #1c2834)), var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-layer-2, #1c2834)));
         box-shadow: 0 14px 38px rgba(0,0,0,.45);
+        max-height: 520px; overflow-y: auto; overscroll-behavior: contain;
       }
       .lit-context-head {
         padding: 6px 8px 7px; color: var(--dsw-alias-label-secondary, #92a0ae); font-size: 10px;
@@ -5179,6 +5180,7 @@ window.__ModuleLoader__.load({
       .lit-context-item-on svg { margin-left: auto; }
       .lit-context-danger { color: var(--dsw-alias-state-error-primary, #ff9f9f); }
       .lit-context-sep { height: 1px; margin: 4px 6px; background: var(--dsw-alias-border-l1, rgba(255,255,255,.1)); }
+      .lit-context-groups { max-height: 172px; overflow-y: auto; overscroll-behavior: contain; margin: 0 -2px; padding: 0 2px; }
       .lit-discovery-modal { width: min(820px, 100%); max-height: min(88%, 900px); display: flex; flex-direction: column; }
       .lit-discovery-search { display: flex; gap: 8px; margin-top: 14px; }
       .lit-discovery-search .lit-input { flex: 1; padding-left: 10px; }
@@ -7160,9 +7162,14 @@ window.__ModuleLoader__.load({
         const root = rootRef.current;
         if (!root) return;
         const rect = root.getBoundingClientRect();
+        const margin = 8;
+        const menuWidth = 238;
+        // Keep the menu inside the workspace even when it is full of groups.
+        const maxHeight = Math.max(220, Math.min(520, Math.round(rect.height * 0.72)));
         setContextMenu({
-          x: Math.max(8, Math.min(event.clientX - rect.left, rect.width - 250)),
-          y: Math.max(8, Math.min(event.clientY - rect.top, rect.height - 300)),
+          x: Math.max(margin, Math.min(event.clientX - rect.left, rect.width - menuWidth - margin)),
+          y: Math.max(margin, Math.min(event.clientY - rect.top, rect.height - maxHeight - margin)),
+          maxHeight,
           paperId: paper.id,
         });
       };
@@ -10428,7 +10435,7 @@ window.__ModuleLoader__.load({
                 'div',
                 {
                   className: 'lit-context-menu',
-                  style: { left: contextMenu.x, top: contextMenu.y },
+                  style: { left: contextMenu.x, top: contextMenu.y, maxHeight: contextMenu.maxHeight },
                   onMouseDown: (event) => event.stopPropagation(),
                 },
                 h(
@@ -10482,23 +10489,27 @@ window.__ModuleLoader__.load({
                     )
                   : null,
                 h('div', { className: 'lit-context-label' }, '统一设置分组'),
-                (state.groups || GROUPS).map((group) => {
-                  const allHave =
-                    selectedPapersData.length > 0 &&
-                    selectedPapersData.every((paper) => paper.groups.includes(group.id));
-                  return h(
-                    'button',
-                    {
-                      key: group.id,
-                      type: 'button',
-                      className: allHave ? 'lit-context-item lit-context-item-on' : 'lit-context-item',
-                      onClick: () => bulkToggleGroup(group.id),
-                    },
-                    h('span', { className: 'lit-dot', style: { background: group.color } }),
-                    group.name,
-                    allHave ? h(Icon, { name: 'check', size: 13 }) : null
-                  );
-                }),
+                h(
+                  'div',
+                  { className: 'lit-context-groups' },
+                  (state.groups || GROUPS).map((group) => {
+                    const allHave =
+                      selectedPapersData.length > 0 &&
+                      selectedPapersData.every((paper) => paper.groups.includes(group.id));
+                    return h(
+                      'button',
+                      {
+                        key: group.id,
+                        type: 'button',
+                        className: allHave ? 'lit-context-item lit-context-item-on' : 'lit-context-item',
+                        onClick: () => bulkToggleGroup(group.id),
+                      },
+                      h('span', { className: 'lit-dot', style: { background: group.color } }),
+                      group.name,
+                      allHave ? h(Icon, { name: 'check', size: 13 }) : null
+                    );
+                  })
+                ),
                 h('div', { className: 'lit-context-sep' }),
                 h(
                   'button',

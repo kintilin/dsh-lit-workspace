@@ -15,14 +15,14 @@ From a packed tarball:
 
 ```text
 pnpm pack
-plugin_manager install_bundle E:\DSH_Workspace\dsh-lit\dsh-lit-0.1.0.tgz
+plugin_manager install_bundle <repo>/src/bundle\dsh-lit-<version>.tgz
 ```
 
 From a local directory:
 
 ```text
-plugin_manager install_bundle E:\DSH_Workspace\dsh-lit
-pnpm install --dir E:\DSH_Workspace\dsh-lit
+plugin_manager install_bundle <repo>/src/bundle
+pnpm install --dir <repo>/src/bundle
 ```
 
 The tarball/npm package installs dependencies automatically.
